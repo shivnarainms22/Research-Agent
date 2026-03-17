@@ -1,0 +1,59 @@
+# Experiment Deep Dive: {{ experiment.title }}
+
+**Experiment ID:** {{ experiment.id }}
+**Paper:** {{ paper.title }}
+**Generated:** {{ generated_at }}
+
+---
+
+## Hypothesis
+
+{{ experiment.hypothesis }}
+
+---
+
+## Execution
+
+- **Target:** {{ experiment.execution_target }}
+- **Runtime:** {{ experiment.runtime_seconds | round(1) }}s
+- **Exit Code:** {{ experiment.exit_code }}
+
+---
+
+## Results
+
+### Metrics
+
+```json
+{{ metrics_pretty }}
+```
+
+### Statistical Summary
+
+```json
+{{ statistical_summary_pretty }}
+```
+
+---
+
+## Baseline Comparison
+
+{{ baseline_comparison_summary }}
+
+---
+
+## Conclusion
+
+{{ experiment.conclusion }}
+
+---
+
+## Generated Code
+
+```python
+{{ experiment.generated_code }}
+```
+
+---
+
+*Generated automatically by the Autonomous PhD Research Agent*

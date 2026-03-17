@@ -1,0 +1,52 @@
+[project]
+name = "research-agent"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",
+    "arxiv>=2.1.0",
+    "httpx>=0.27.0",
+    "tenacity>=8.2.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.3.0",
+    "sqlmodel>=0.0.19",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
+    "chromadb>=0.5.0",
+    "sentence-transformers>=3.0.0",
+    "rank-bm25>=0.2.2",
+    "apscheduler>=3.10.0",
+    "filelock>=3.14.0",
+    "docker>=7.1.0",
+    "modal>=0.62.0",
+    "scipy>=1.13.0",
+    "pingouin>=0.5.4",
+    "pandas>=2.2.0",
+    "numpy>=1.26.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.2.0",
+    "feedparser>=6.0.11",
+    "pymupdf>=1.24.0",
+    "bandit>=1.7.9",
+    "jinja2>=3.1.0",
+    "structlog>=24.1.0",
+    "typer>=0.12.0",
+    "networkx>=3.3.0",
+    "rich>=13.7.0",
+    "streamlit>=1.35.0",
+    "pyyaml>=6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["core", "ingestion", "synthesis", "experiments", "analysis", "reporting", "knowledge", "scheduler", "ui"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-httpx>=0.30.0",
+]

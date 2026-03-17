@@ -1,0 +1,32 @@
+FROM python:3.11-slim
+
+# Security: run as non-root
+RUN useradd -m -u 1000 researcher
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Install scientific Python stack via uv
+RUN uv pip install --system --no-cache \
+    torch==2.2.0 \
+    torchvision==0.17.0 \
+    transformers==4.40.0 \
+    numpy==1.26.4 \
+    scipy==1.13.0 \
+    scikit-learn==1.4.2 \
+    pandas==2.2.2 \
+    matplotlib==3.8.4 \
+    seaborn==0.13.2 \
+    tqdm==4.66.2 \
+    datasets==2.19.0 \
+    huggingface_hub==0.23.0 \
+    accelerate==0.29.3 \
+    evaluate==0.4.1
+
+# Create workspace
+RUN mkdir -p /workspace/results && chown -R researcher:researcher /workspace
+
+USER researcher
+WORKDIR /workspace
+
+CMD ["python", "run.py"]

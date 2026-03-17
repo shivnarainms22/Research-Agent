@@ -1,0 +1,166 @@
+# Research Report: {{ title }}
+
+**Cycle ID:** {{ cycle_id }}
+**Generated:** {{ generated_at }}
+**Report Type:** {{ report_type }}
+
+---
+
+## TL;DR
+{{ tldr }}
+
+---
+
+## Executive Summary
+
+{{ executive_summary }}
+
+---
+
+## Papers Analyzed This Cycle
+
+{% for paper in papers %}
+### {{ loop.index }}. {{ paper.title }}
+
+- **Source:** {{ paper.source }}
+- **Published:** {{ paper.published_date }}
+- **URL:** {{ paper.url }}
+- **Novelty** (how new is this idea): {{ paper.novelty_score | round(1) }}/10
+- **Relevance** (fit to our research focus): {{ paper.relevance_score | round(1) }}/10
+- **Reproducibility effort**: {{ paper.reproducibility_difficulty }}
+
+**Key Contributions:**
+{% if paper.key_contributions %}
+{% for c in paper.key_contributions %}- {{ c }}
+{% endfor %}
+{% else %}
+- (not extracted)
+{% endif %}
+
+{% if paper.datasets_used %}
+**Data used:** {{ paper.datasets_used | join(", ") }}
+{% endif %}
+
+{% if paper.key_hyperparameters %}
+**Key Hyperparameters:**
+{% for k, v in paper.key_hyperparameters.items() %}- `{{ k }}`: {{ v }}
+{% endfor %}
+{% endif %}
+
+{% if paper.limitations %}
+**Caveats:**
+{% for l in paper.limitations %}- {{ l }}
+{% endfor %}
+{% endif %}
+
+{% endfor %}
+
+---
+
+## Experiments Run This Cycle
+
+{% for family in experiment_families %}
+### {{ loop.index }}. {{ family.parent.title }}
+
+- **Paper:** {{ family.parent.paper_title }}
+- **Status:** {{ family.parent.status }}
+- **Target:** {{ family.parent.execution_target }}
+- **Runtime:** {{ family.parent.runtime_seconds | round(1) }}s
+- **Baseline:** {{ family.parent.baseline_label }}
+
+**Hypothesis:** {{ family.parent.hypothesis }}
+
+**Results:**
+{{ family.parent.metrics_bullets }}
+
+**Conclusion:** {{ family.parent.conclusion }}
+
+{% if family.ablations %}
+#### Ablation Variants
+
+| Variant | Baseline Result | Runtime | Summary |
+|---------|----------------|---------|---------|
+{% for abl in family.ablations %}| {{ abl.title }} | {{ abl.baseline_label }} | {{ abl.runtime_seconds | round(1) }}s | {{ abl.conclusion[:120] }}{% if abl.conclusion | length > 120 %}…{% endif %} |
+{% endfor %}
+
+{% endif %}
+
+{% endfor %}
+
+---
+
+## Key Findings
+
+{% for finding in key_findings %}- {{ finding }}
+{% endfor %}
+
+---
+
+## Open Questions
+
+{% for question in open_questions %}- {{ question }}
+{% endfor %}
+
+---
+
+## Recommended Next Experiments
+
+{% for rec in next_experiments %}- {{ rec }}
+{% endfor %}
+
+---
+
+## Research Themes
+
+{% if themes %}
+{% for theme in themes %}
+### {{ theme.name }} ({{ theme.paper_count }} papers)
+
+{{ theme.description }}
+
+{% endfor %}
+{% else %}
+- No themes clustered yet — run the theme clusterer to populate this section.
+{% endif %}
+
+---
+
+## Contradictions Detected
+
+{% if contradictions %}
+{% for c in contradictions %}
+- **{{ c.metric }}** — {{ c.description }} *({{ c.severity }})*
+{% endfor %}
+{% else %}
+- No contradictions detected this period.
+{% endif %}
+
+---
+
+## Research Gaps
+
+{% if gaps %}
+{% for gap in gaps %}
+- {{ gap.description }}
+{% endfor %}
+{% else %}
+- No research gaps identified yet — run the gap finder to populate this section.
+{% endif %}
+
+---
+
+## System Stats
+
+- The system has tracked **{{ total_papers }}** papers to date.
+- **{{ total_experiments }}** experiments have been run and completed.
+{% if reproduction_rate == 0 %}
+- No experiments have matched their paper's claimed results yet.
+{% elif reproduction_rate < 50 %}
+- Reproduction rate: {{ reproduction_rate }}% — fewer than half of experiments matched their paper's claimed results.
+{% else %}
+- Reproduction rate: {{ reproduction_rate }}% — at least half of experiments matched their paper's claimed results.
+{% endif %}
+
+---
+
+*Generated automatically by the Autonomous PhD Research Agent*

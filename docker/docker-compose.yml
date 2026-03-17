@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    image: research-sandbox:latest
+    # Override at runtime with docker run flags
+    # --network none, --memory=8g, --cpus=4
+    volumes:
+      - ../data/experiments:/workspace:rw
+    user: "1000:1000"
+    read_only: false
+    security_opt:
+      - no-new-privileges:true

@@ -1,0 +1,21 @@
+arxiv_categories: [cs.LG, cs.AI, cs.CL, cs.CV, cs.RO]
+keywords:
+  - mechanistic interpretability
+  - sparse autoencoder
+  - superposition
+  - polysemanticity
+  - feature visualization
+  - transformer circuits
+  - activation patching
+  - steering vector
+  - representation engineering
+  - probing classifier
+  - linear representation
+  - concept bottleneck
+  - vision-language-action
+  - VLA model
+  - robot learning
+thresholds:
+  min_novelty_score_to_experiment: 7.5
+  min_relevance_score_to_experiment: 7.0
+  min_keyword_matches_to_analyze: 2
