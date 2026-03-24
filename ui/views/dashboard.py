@@ -288,7 +288,7 @@ def render() -> None:
 
     # ── Topbar: title left, action buttons right (flat columns — no nesting) ──
     locked = _is_pipeline_locked()
-    col_title, c1, c2, c3 = st.columns([4, 1, 1, 1])
+    col_title, c1, c2, c3 = st.columns([2, 1, 1, 1])
     with col_title:
         st.markdown("## Dashboard")
         st.caption("Autonomous research pipeline")
