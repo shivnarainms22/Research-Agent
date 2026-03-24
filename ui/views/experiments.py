@@ -105,6 +105,13 @@ def render() -> None:
         if st.button("▶ Run experiment", key=f"run_{exp.id}"):
             _run_experiment(exp)
 
+    if exp.status == "running":
+        if st.button("✕ Mark as failed (stuck)", key=f"reset_{exp.id}"):
+            from knowledge.experiment_store import update_experiment_status
+            update_experiment_status(exp.id, "failed", error="Manually reset from running state")
+            st.cache_data.clear()
+            st.rerun()
+
     if result:
         metrics = parse_json_dict(result.metrics)
         if metrics:

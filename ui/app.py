@@ -31,7 +31,12 @@ PAGES = [
     "Settings",
 ]
 
-page = st.sidebar.radio("Navigate", PAGES)
+if "nav_page" not in st.session_state:
+    _from_url = st.query_params.get("page", "Dashboard")
+    st.session_state.nav_page = _from_url if _from_url in PAGES else "Dashboard"
+page = st.sidebar.radio("Navigate", PAGES, key="nav_page")
+if st.query_params.get("page") != page:
+    st.query_params["page"] = page
 
 if page == "Dashboard":
     from ui.views.dashboard import render
