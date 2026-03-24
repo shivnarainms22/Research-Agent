@@ -233,6 +233,10 @@ hr { border-color: rgba(255,255,255,0.07); margin: 24px 0; }
     border-bottom: 2px solid #ffffff !important;
 }
 
+/* ── Hide running spinner & top decoration bar ── */
+[data-testid="stStatusWidget"] { display: none !important; }
+[data-testid="stDecoration"]   { display: none !important; }
+
 /* ── Focus ring ── */
 *:focus { outline-color: rgba(255,255,255,0.35) !important; }
 
