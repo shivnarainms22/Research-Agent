@@ -286,32 +286,28 @@ def render() -> None:
     if "launch_cmd" not in st.session_state:
         st.session_state.launch_cmd = "run"
 
-    # ── Topbar: title left, action buttons right ──
+    # ── Topbar: title left, action buttons right (flat columns — no nesting) ──
     locked = _is_pipeline_locked()
-    col_title, _, col_actions = st.columns([3, 1, 2])
+    col_title, c1, c2, c3 = st.columns([4, 1, 1, 1])
     with col_title:
         st.markdown("## Dashboard")
         st.caption("Autonomous research pipeline")
-    with col_actions:
-        if locked:
-            st.warning("Pipeline running")
-        else:
-            c1, c2, c3 = st.columns(3)
-            if c1.button("▶ Run", use_container_width=True):
-                _launch(["uv", "run", "python", "main.py", "run"])
-                st.session_state.launch_time = time.time()
-                st.session_state.launch_retries = 0
-                st.session_state.launch_cmd = "run"
-            if c2.button("📥 Ingest", use_container_width=True):
-                _launch(["uv", "run", "python", "main.py", "ingest", "--source", "arxiv", "--days", "7"])
-                st.session_state.launch_time = time.time()
-                st.session_state.launch_retries = 0
-                st.session_state.launch_cmd = "ingest"
-            if c3.button("📊 Report", use_container_width=True):
-                _launch(["uv", "run", "python", "main.py", "report"])
-                st.session_state.launch_time = time.time()
-                st.session_state.launch_retries = 0
-                st.session_state.launch_cmd = "report"
+    if not locked:
+        if c1.button("▶ Run", use_container_width=True):
+            _launch(["uv", "run", "python", "main.py", "run"])
+            st.session_state.launch_time = time.time()
+            st.session_state.launch_retries = 0
+            st.session_state.launch_cmd = "run"
+        if c2.button("📥 Ingest", use_container_width=True):
+            _launch(["uv", "run", "python", "main.py", "ingest", "--source", "arxiv", "--days", "7"])
+            st.session_state.launch_time = time.time()
+            st.session_state.launch_retries = 0
+            st.session_state.launch_cmd = "ingest"
+        if c3.button("📊 Report", use_container_width=True):
+            _launch(["uv", "run", "python", "main.py", "report"])
+            st.session_state.launch_time = time.time()
+            st.session_state.launch_retries = 0
+            st.session_state.launch_cmd = "report"
 
     counts = _get_experiment_counts()
     total_papers = _get_paper_count()
