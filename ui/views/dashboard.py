@@ -140,18 +140,6 @@ def _read_log_tail(n: int = 40) -> str:
         return ""
 
 
-def _log_started_after(launch_time: float) -> bool:
-    if not _LOG_FILE.exists():
-        return False
-    return _LOG_FILE.stat().st_mtime > launch_time
-
-
-def _log_still_active(launch_time: float, idle_secs: float = 8.0) -> bool:
-    if not _LOG_FILE.exists():
-        return False
-    mtime = _LOG_FILE.stat().st_mtime
-    return mtime > launch_time and (time.time() - mtime) < idle_secs
-
 
 def _render_pipeline_status(state: dict) -> None:
     stage = state.get("current_stage", "unknown")
@@ -230,44 +218,28 @@ def _pipeline_status_fragment() -> None:
     """Auto-refreshes every 3s without dimming the full page."""
     locked = _is_pipeline_locked()
     active = _get_active_cycle()
-    launch_time = st.session_state.get("launch_time")
-    launch_retries = st.session_state.get("launch_retries", 0)
-    launch_cmd = st.session_state.get("launch_cmd", "run")
-    just_launched = launch_time is not None and (time.time() - launch_time) < 20
 
     if locked and active:
+        # Pipeline confirmed running — show progress bar + live log
         _render_pipeline_status(active)
         st.session_state.launch_time = None
         st.session_state.launch_retries = 0
     elif locked and not active:
-        st.info("Pipeline is starting up...")
+        # Lock held but no state file yet — still starting up
+        st.info("Pipeline is starting up…")
         log_tail = _read_log_tail(20)
         if log_tail:
             with st.expander("Log", expanded=True):
                 st.code(log_tail, language=None)
-    elif just_launched:
-        log_started = _log_started_after(launch_time)
-        log_active = _log_still_active(launch_time)
-        if log_active:
-            st.info(f"Running **{launch_cmd}**...")
-            log_tail = _read_log_tail(40)
-            if log_tail:
-                with st.expander("Live log", expanded=True):
-                    st.code(log_tail, language=None)
-        elif log_started:
-            st.success(f"**{launch_cmd.capitalize()}** completed.")
-            log_tail = _read_log_tail(40)
-            if log_tail:
-                with st.expander("Output log", expanded=True):
-                    st.code(log_tail, language=None)
-            st.session_state.launch_time = None
-            st.session_state.launch_retries = 0
-        elif launch_retries < 8:
-            st.info(f"Launching **{launch_cmd}**... ({launch_retries * 3}s)")
+    elif st.session_state.get("launch_time") is not None:
+        # Just launched — waiting for lock to be acquired
+        launch_retries = st.session_state.get("launch_retries", 0)
+        if launch_retries < 10:
+            st.info(f"Starting pipeline… ({launch_retries * 3}s)")
             st.session_state.launch_retries = launch_retries + 1
         else:
             st.error(
-                f"**{launch_cmd}** failed to start from `{_PROJECT_ROOT}`. "
+                f"Pipeline failed to start from `{_PROJECT_ROOT}`. "
                 "Check that `uv` is in your PATH."
             )
             st.session_state.launch_time = None
