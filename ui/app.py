@@ -167,8 +167,7 @@ hr { border-color: rgba(255,255,255,0.07); margin: 24px 0; }
 
 /* ── Inputs / selects ── */
 [data-baseweb="input"] input,
-[data-baseweb="textarea"] textarea,
-[data-baseweb="select"] div {
+[data-baseweb="textarea"] textarea {
     background-color: #111111 !important;
     border-color: rgba(255,255,255,0.12) !important;
     color: #ffffff !important;
@@ -178,6 +177,46 @@ hr { border-color: rgba(255,255,255,0.07); margin: 24px 0; }
 [data-baseweb="textarea"] textarea:focus {
     border-color: rgba(255,255,255,0.45) !important;
     box-shadow: 0 0 0 2px rgba(255,255,255,0.08) !important;
+}
+
+/* ── Multiselect / select containers ── */
+[data-baseweb="select"] > div {
+    background-color: #111111 !important;
+    border-color: rgba(255,255,255,0.12) !important;
+    border-radius: 8px !important;
+}
+/* Selected tag pills */
+[data-baseweb="tag"] {
+    background-color: #2a2a2a !important;
+    border: 1px solid rgba(255,255,255,0.15) !important;
+    border-radius: 5px !important;
+}
+[data-baseweb="tag"] span {
+    color: #ffffff !important;
+}
+[data-baseweb="tag"] button span {
+    color: rgba(255,255,255,0.6) !important;
+}
+/* Dropdown list */
+[data-baseweb="popover"] {
+    background-color: #111111 !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 8px !important;
+}
+[data-baseweb="menu"] li {
+    background-color: #111111 !important;
+    color: #ffffff !important;
+}
+[data-baseweb="menu"] li:hover,
+[data-baseweb="option"]:hover {
+    background-color: rgba(255,255,255,0.08) !important;
+}
+/* Placeholder + typed search text */
+[data-baseweb="select"] input {
+    color: #ffffff !important;
+}
+[data-baseweb="select"] [data-testid="stMarkdownContainer"] {
+    color: #ffffff !important;
 }
 
 /* ── Tabs ── */
@@ -223,7 +262,7 @@ st.sidebar.markdown("""
     <div style="width:32px;height:32px;background:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">🔬</div>
     <div>
       <div style="font-size:14px;font-weight:700;color:#fff;letter-spacing:-0.2px;">Research Agent</div>
-      <div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:1px;">PhD Automation</div>
+      <div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:1px;">Autonomous Research</div>
     </div>
   </div>
 </div>

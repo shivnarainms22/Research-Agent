@@ -291,7 +291,7 @@ def render() -> None:
     col_title, _, col_actions = st.columns([3, 1, 2])
     with col_title:
         st.markdown("## Dashboard")
-        st.caption("Autonomous PhD research pipeline")
+        st.caption("Autonomous research pipeline")
     with col_actions:
         if locked:
             st.warning("Pipeline running")

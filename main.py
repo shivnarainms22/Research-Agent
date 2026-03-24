@@ -1,4 +1,4 @@
-"""CLI entrypoint for the Autonomous PhD Research Agent."""
+"""CLI entrypoint for the Autonomous Research Agent."""
 from __future__ import annotations
 
 import json
@@ -19,7 +19,7 @@ os.environ.setdefault("PYTHONUTF8", "1")
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-app = typer.Typer(name="research-agent", help="Autonomous PhD Research System")
+app = typer.Typer(name="research-agent", help="Autonomous Research System")
 console = Console()
 log = structlog.get_logger()
 
