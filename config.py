@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     claude_haiku_model: str = "claude-haiku-4-5-20251001"
 
     # Paths
-    base_dir: Path = Path("D:/Research")
-    data_dir: Path = Path("D:/Research/data")
+    base_dir: Path = Path(__file__).resolve().parent
+    data_dir: Path = Path(__file__).resolve().parent / "data"
 
     @property
     def db_path(self) -> Path:
