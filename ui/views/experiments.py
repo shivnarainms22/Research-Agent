@@ -17,10 +17,14 @@ def _get_all_experiments():
 
 
 BASELINE_LABELS = {
-    "reproduced": "✓ Reproduced",
-    "partial": "~ Partial",
-    "failed": "✗ Failed",
-    "not_applicable": "? N/A",
+    "fully_reproduced":     "✓ Reproduced",
+    "partially_reproduced": "~ Partial",
+    "not_reproduced":       "✗ Failed",
+    "no_experiments":       "? N/A",
+    "no_analysis":          "? No analysis",
+    "no_baselines":         "? No baselines",
+    "no_metrics":           "? No metrics",
+    "not_applicable":       "? N/A",
 }
 
 
@@ -63,7 +67,7 @@ def render() -> None:
         baseline_status = "?"
         if result and result.baseline_comparison:
             bc = parse_json_dict(result.baseline_comparison)
-            baseline_status = bc.get("status", "?")
+            baseline_status = bc.get("overall") or bc.get("status", "?")
         rows.append({
             "id": exp.id[:8],
             "title": exp.title[:60],
@@ -118,7 +122,7 @@ def render() -> None:
 
         if result.baseline_comparison:
             bc = parse_json_dict(result.baseline_comparison)
-            status = bc.get("status", "?")
+            status = bc.get("overall") or bc.get("status", "?")
             label = BASELINE_LABELS.get(status, status)
             st.markdown(f"**Baseline Comparison:** {label}")
 
@@ -166,6 +170,25 @@ def _run_experiment(exp) -> None:
             if get_result(exp.id):
                 delete_result(exp.id)
             save_result(result)
+
+            # Inline analysis: stats + baseline + conclusion
+            if result.exit_code == 0 and result.metrics != "{}":
+                try:
+                    st.write("Analyzing results…")
+                    _metrics = json.loads(result.metrics)
+                    from analysis import statistical_analyzer, baseline_comparator
+                    from analysis.analysis_pipeline import _generate_conclusion
+                    if _metrics:
+                        result.statistical_summary = json.dumps(statistical_analyzer.analyze(_metrics))
+                    comparison = baseline_comparator.compare(result, exp.paper_id)
+                    result.baseline_comparison = json.dumps(comparison)
+                    if result.statistical_summary:
+                        result.conclusion = _generate_conclusion(
+                            exp.title, exp.hypothesis, _metrics, comparison
+                        )
+                    save_result(result)
+                except Exception as _e:
+                    st.warning(f"Analysis step failed (run a full cycle to retry): {_e}")
 
             if result.exit_code == 0 and result.metrics != "{}":
                 update_experiment_status(exp.id, "completed")

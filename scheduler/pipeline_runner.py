@@ -7,6 +7,7 @@ from datetime import datetime
 import structlog
 
 from core import token_tracker
+from config import settings
 from core.state import (
     RunState,
     acquire_pipeline_lock,
@@ -53,6 +54,10 @@ def run_cycle(days_back: int = 1) -> RunState:
 
     finally:
         lock.release()
+        try:
+            (settings.state_dir / "pipeline.lock").unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 def _run_from_stage(state: RunState, days_back: int) -> None:

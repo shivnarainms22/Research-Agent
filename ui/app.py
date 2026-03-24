@@ -28,6 +28,7 @@ PAGES = [
     "Experiments",
     "Living Review",
     "Reports",
+    "Settings",
 ]
 
 page = st.sidebar.radio("Navigate", PAGES)
@@ -52,4 +53,7 @@ elif page == "Living Review":
     render()
 elif page == "Reports":
     from ui.views.reports import render
+    render()
+elif page == "Settings":
+    from ui.views.settings import render
     render()

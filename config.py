@@ -97,7 +97,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _load_domain_yaml(self) -> "Settings":
         """Override settings from domain.yaml if the file exists."""
-        domain_yaml = Path("D:/Research/domain.yaml")
+        domain_yaml = Path(__file__).resolve().parent / "domain.yaml"
         if not domain_yaml.exists():
             return self
         try:

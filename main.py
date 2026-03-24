@@ -220,6 +220,26 @@ def ingest(
 
     console.print(f"[green]Ingested {len(new_papers)} new papers[/green] from {source}")
 
+    # Write a summary JSON so the dashboard "Recent Cycles" table shows this run
+    from datetime import datetime
+    cycle_id = f"ingest_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    summary = {
+        "cycle_id": cycle_id,
+        "started_at": datetime.utcnow().isoformat(),
+        "current_stage": "done",
+        "completed_stages": ["ingestion"],
+        "paper_ids_this_cycle": [p.id for p in new_papers],
+        "experiment_ids_this_cycle": [],
+        "error_log": [],
+        "is_complete": True,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+    }
+    settings.state_dir.mkdir(parents=True, exist_ok=True)
+    (settings.state_dir / f"{cycle_id}.json").write_text(
+        json.dumps(summary, indent=2, default=str), encoding="utf-8"
+    )
+
 
 @app.command()
 def metrics():
