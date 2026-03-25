@@ -1,9 +1,6 @@
 """Living Review page — Themes, Gaps, Contradictions."""
 from __future__ import annotations
 
-import json
-import subprocess
-
 import streamlit as st
 
 from config import settings
@@ -29,9 +26,33 @@ def _contradictions():
     return get_recent_contradictions(days=30)
 
 
-def _launch(cmd: list[str]) -> None:
-    subprocess.Popen(cmd, cwd=str(settings.base_dir))
-    st.info("Job started in background — refresh in a moment.")
+def _run_theme_clusterer() -> None:
+    with st.status("Running Theme Clusterer…", expanded=True) as s:
+        try:
+            st.write("Clustering papers by topic…")
+            from knowledge.theme_clusterer import cluster_themes
+            cluster_themes()
+            st.write("Done — reloading themes…")
+            st.cache_data.clear()
+            s.update(label="Theme clustering complete", state="complete")
+        except Exception as e:
+            s.update(label=f"Failed: {e}", state="error")
+            st.error(str(e))
+
+
+def _run_gap_finder() -> None:
+    with st.status("Running Gap Finder…", expanded=True) as s:
+        try:
+            st.write("Analysing corpus for research gaps…")
+            import uuid
+            from knowledge.gap_finder import find_gaps
+            find_gaps(str(uuid.uuid4()))
+            st.write("Done — reloading gaps…")
+            st.cache_data.clear()
+            s.update(label="Gap finding complete", state="complete")
+        except Exception as e:
+            s.update(label=f"Failed: {e}", state="error")
+            st.error(str(e))
 
 
 def render() -> None:
@@ -47,8 +68,8 @@ def render() -> None:
         col1, col2 = st.columns([4, 1])
         col1.subheader(f"{len(themes)} research themes")
         if col2.button("Run Theme Clusterer", use_container_width=True):
-            _launch(["uv", "run", "python", "-c",
-                     "from knowledge.theme_clusterer import cluster_themes; cluster_themes()"])
+            _run_theme_clusterer()
+            st.rerun()
 
         if not themes:
             st.info("No themes yet. Run the theme clusterer to generate them.")
@@ -72,8 +93,8 @@ def render() -> None:
         col1, col2 = st.columns([4, 1])
         col1.subheader(f"{len(gaps)} research gaps")
         if col2.button("Run Gap Finder", use_container_width=True):
-            _launch(["uv", "run", "python", "-c",
-                     "import uuid; from knowledge.gap_finder import find_gaps; find_gaps(str(uuid.uuid4()))"])
+            _run_gap_finder()
+            st.rerun()
 
         if not gaps:
             st.info("No gaps yet. Run the gap finder (requires ≥3 analyzed papers).")

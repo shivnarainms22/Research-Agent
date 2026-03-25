@@ -16,6 +16,8 @@ def _get_all_experiments():
     return get_all_experiments(limit=1000)
 
 
+KNOWN_STATUSES = ["pending_review", "pending", "running", "completed", "failed", "skipped"]
+
 BASELINE_LABELS = {
     "fully_reproduced":     "✓ Reproduced",
     "partially_reproduced": "~ Partial",
@@ -33,11 +35,10 @@ def render() -> None:
 
     experiments = _get_all_experiments()
 
-    all_statuses = sorted({e.status for e in experiments})
     all_targets = sorted({e.execution_target for e in experiments})
 
     col1, col2 = st.columns(2)
-    selected_statuses = col1.multiselect("Status filter", all_statuses, default=all_statuses)
+    selected_statuses = col1.multiselect("Status filter", KNOWN_STATUSES, default=KNOWN_STATUSES)
     selected_targets = col2.multiselect("Target filter", all_targets, default=all_targets)
 
     # Paper ID filter from session state (set by papers page)
@@ -106,10 +107,16 @@ def render() -> None:
             _run_experiment(exp)
 
     if exp.status == "running":
-        if st.button("✕ Mark as failed (stuck)", key=f"reset_{exp.id}"):
-            from knowledge.experiment_store import update_experiment_status
-            update_experiment_status(exp.id, "failed", error="Manually reset from running state")
-            st.cache_data.clear()
+        if exp.execution_target == "local":
+            st.info("Clicking Stop will kill the Docker container and mark as failed.")
+        else:
+            st.warning(
+                "This is a **cloud (Modal)** experiment. Clicking Stop marks it as failed "
+                "in the database, but the Modal sandbox keeps running until its timeout. "
+                "To free cloud resources immediately, go to modal.com → Apps → Sandboxes."
+            )
+        if st.button("⏹ Stop experiment", key=f"stop_{exp.id}", type="primary"):
+            _force_fail_experiment(exp)
             st.rerun()
 
     if result:
@@ -138,6 +145,27 @@ def render() -> None:
 
         with st.expander("stdout", expanded=False):
             st.code(result.stdout or "(empty)", language="text")
+
+
+def _force_fail_experiment(exp) -> None:
+    """Kill the underlying process/container and mark experiment as failed."""
+    import subprocess
+    from knowledge.experiment_store import update_experiment_status
+
+    if exp.execution_target == "local":
+        try:
+            r = subprocess.run(
+                ["docker", "ps", "-q", "--filter", "ancestor=research-sandbox:latest"],
+                capture_output=True, text=True, timeout=10,
+            )
+            for cid in r.stdout.strip().split():
+                if cid:
+                    subprocess.run(["docker", "kill", cid], capture_output=True, timeout=10)
+        except Exception as e:
+            st.warning(f"Docker kill failed: {e}")
+
+    update_experiment_status(exp.id, "failed", error="Stopped by user")
+    st.cache_data.clear()
 
 
 def _run_experiment(exp) -> None:
