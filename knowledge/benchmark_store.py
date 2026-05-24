@@ -39,3 +39,34 @@ def deactivate_item(item_id: str) -> None:
             item.updated_at = datetime.utcnow()
             session.add(item)
             session.commit()
+
+
+def save_run(run: BenchmarkRun, item_results: list[BenchmarkItemResult]) -> None:
+    """Persist a scoring run and all its per-item results in one session."""
+    with Session(get_engine(), expire_on_commit=False) as session:
+        session.add(run)
+        for r in item_results:
+            session.add(r)
+        session.commit()
+
+
+def get_runs(limit: int = 30) -> list[BenchmarkRun]:
+    """Run history, most recent first."""
+    with Session(get_engine()) as session:
+        return list(session.exec(
+            select(BenchmarkRun).order_by(BenchmarkRun.recorded_at.desc()).limit(limit)
+        ).all())
+
+
+def get_latest_run() -> Optional[BenchmarkRun]:
+    with Session(get_engine()) as session:
+        return session.exec(
+            select(BenchmarkRun).order_by(BenchmarkRun.recorded_at.desc()).limit(1)
+        ).first()
+
+
+def get_item_results(run_id: str) -> list[BenchmarkItemResult]:
+    with Session(get_engine()) as session:
+        return list(session.exec(
+            select(BenchmarkItemResult).where(BenchmarkItemResult.run_id == run_id)
+        ).all())

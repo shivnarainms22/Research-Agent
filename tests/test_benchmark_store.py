@@ -62,3 +62,42 @@ def test_deactivate_item(in_memory_engine):
     deactivate_item("i1")
     assert get_items(active_only=True) == []
     assert get_item("i1").active is False
+
+
+def _run(run_id="r1", cycle_id=None, accuracy=1.0):
+    from core.models import BenchmarkRun
+    return BenchmarkRun(id=run_id, cycle_id=cycle_id, trigger="manual",
+                        n_items=1, n_pass=1, n_fail=0, n_unscorable=0, accuracy=accuracy)
+
+
+def _result(res_id, run_id, item_id="i1", status="pass"):
+    from core.models import BenchmarkItemResult
+    return BenchmarkItemResult(
+        id=res_id, run_id=run_id, item_id=item_id, experiment_id="e1",
+        metric_name="accuracy", expected_value=0.9, tolerance=0.05,
+        tolerance_type="relative", measured_value=0.91, passed=True, status=status,
+    )
+
+
+def test_save_run_persists_run_and_results(in_memory_engine):
+    from knowledge.benchmark_store import save_run, get_runs, get_item_results
+    save_run(_run("r1"), [_result("ir1", "r1"), _result("ir2", "r1", item_id="i2")])
+    runs = get_runs()
+    assert len(runs) == 1 and runs[0].id == "r1"
+    assert len(get_item_results("r1")) == 2
+
+
+def test_get_runs_orders_most_recent_first(in_memory_engine):
+    from knowledge.benchmark_store import save_run, get_runs
+    import time
+    save_run(_run("r1"), [])
+    time.sleep(0.01)
+    save_run(_run("r2"), [])
+    assert [r.id for r in get_runs()] == ["r2", "r1"]
+
+
+def test_get_latest_run(in_memory_engine):
+    from knowledge.benchmark_store import save_run, get_latest_run
+    assert get_latest_run() is None
+    save_run(_run("r1"), [])
+    assert get_latest_run().id == "r1"
