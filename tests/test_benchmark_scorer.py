@@ -106,3 +106,56 @@ def test_gather_numeric_list_uses_mean(in_memory_engine):
     _seed_item_and_result(in_memory_engine, metrics='{"accuracy": [0.90, 0.92]}')
     m = gather_measurements(get_items())[0]
     assert m.status == "ok" and abs(m.measured - 0.91) < 1e-9
+
+
+def test_build_metric_points_overall_and_dimensions():
+    from analysis.benchmark_scorer import ItemOutcome, build_metric_points
+
+    def _o(passed, status, difficulty="easy", source="arxiv"):
+        return ItemOutcome(item_id="x", experiment_id="e", metric_name="accuracy",
+                           expected_value=0.9, tolerance=0.05, tolerance_type="relative",
+                           measured_value=0.9, passed=passed, status=status,
+                           difficulty=difficulty, source=source)
+
+    outcomes = [_o(True, "pass", "easy", "arxiv"),
+                _o(False, "fail", "easy", "arxiv"),
+                _o(None, "no_result", "hard", "substack")]
+    points = build_metric_points(outcomes)
+    overall = next(p for p in points if p.dimension == "overall")
+    assert overall.metric == "benchmark_accuracy"
+    assert overall.numerator == 1 and overall.denominator == 2  # unscorable excluded
+    easy = next(p for p in points if p.dimension == "difficulty:easy")
+    assert easy.numerator == 1 and easy.denominator == 2
+    # no scorable hard items -> no difficulty:hard bucket
+    assert not any(p.dimension == "difficulty:hard" for p in points)
+
+
+def test_build_metric_points_zero_scorable_value_none():
+    from analysis.benchmark_scorer import ItemOutcome, build_metric_points
+    o = ItemOutcome(item_id="x", experiment_id="e", metric_name="accuracy",
+                    expected_value=0.9, tolerance=0.05, tolerance_type="relative",
+                    measured_value=None, passed=None, status="no_result",
+                    difficulty="easy", source="arxiv")
+    overall = next(p for p in build_metric_points([o]) if p.dimension == "overall")
+    assert overall.value is None and overall.denominator == 0
+
+
+def test_record_benchmark_run_persists_and_writes_eval_metric(in_memory_engine):
+    from analysis.benchmark_scorer import record_benchmark_run
+    from knowledge.benchmark_store import get_runs, get_item_results
+    from knowledge.eval_metric_store import get_latest
+
+    _seed_item_and_result(in_memory_engine, item_id="i1", experiment_id="e1",
+                          metrics='{"accuracy": 0.91}')  # within ±5% of 0.9 -> pass
+    run = record_benchmark_run(trigger="manual")
+    assert run.n_pass == 1 and run.n_fail == 0 and run.accuracy == 1.0
+    assert len(get_runs()) == 1
+    assert len(get_item_results(run.id)) == 1
+    em = get_latest("benchmark_accuracy", "overall")
+    assert em is not None and em.numerator == 1 and em.denominator == 1
+
+
+def test_record_benchmark_run_empty_golden_set(in_memory_engine):
+    from analysis.benchmark_scorer import record_benchmark_run
+    run = record_benchmark_run(trigger="manual")
+    assert run.n_items == 0 and run.accuracy is None

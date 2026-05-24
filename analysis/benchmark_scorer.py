@@ -145,3 +145,76 @@ def gather_measurements(items: list[BenchmarkItem]) -> list[Measurement]:
         value, status = _extract_numeric(metrics, it.metric_name)
         out.append(Measurement(it, value, difficulty, source, status))
     return out
+
+
+def _bucket_point(outcomes: list[ItemOutcome], dimension: str):
+    from knowledge.eval_metric_store import MetricPoint
+    scorable = [o for o in outcomes if o.status in ("pass", "fail")]
+    n = len(scorable)
+    n_pass = sum(1 for o in scorable if o.status == "pass")
+    n_fail = n - n_pass
+    value: Optional[float] = (n_pass / n) if n else None
+    context = json.dumps({"pass": n_pass, "fail": n_fail,
+                          "unscorable": len(outcomes) - n})
+    return MetricPoint(metric="benchmark_accuracy", dimension=dimension,
+                       value=value, numerator=n_pass, denominator=n, context=context)
+
+
+def build_metric_points(outcomes: list[ItemOutcome]) -> list:
+    """Pure: aggregate outcomes into benchmark_accuracy MetricPoints (overall + dimensions)."""
+    points = [_bucket_point(outcomes, "overall")]
+    for dim_name, getter in (("difficulty", lambda o: o.difficulty),
+                             ("source", lambda o: o.source)):
+        groups: dict[str, list[ItemOutcome]] = {}
+        for o in outcomes:
+            key = getter(o)
+            if key in _UNKNOWN:
+                continue
+            groups.setdefault(key, []).append(o)
+        for key, grp in groups.items():
+            # Only emit a bucket if it has at least one scorable item.
+            if any(o.status in ("pass", "fail") for o in grp):
+                points.append(_bucket_point(grp, f"{dim_name}:{key}"))
+    return points
+
+
+def record_benchmark_run(cycle_id: Optional[str] = None, trigger: str = "manual"):
+    """Score the active golden set against latest results; persist run + item-results;
+    write aggregate benchmark_accuracy to the SP1 EvalMetric store. Returns the BenchmarkRun."""
+    from core.models import BenchmarkRun, BenchmarkItemResult
+    from knowledge.benchmark_store import get_items, save_run
+    from knowledge.eval_metric_store import save_metrics
+
+    items = get_items(active_only=True)
+    outcomes = score(gather_measurements(items))
+
+    n_pass = sum(1 for o in outcomes if o.status == "pass")
+    n_fail = sum(1 for o in outcomes if o.status == "fail")
+    n_unscorable = len(outcomes) - n_pass - n_fail
+    n_scorable = n_pass + n_fail
+    accuracy = (n_pass / n_scorable) if n_scorable else None
+
+    run = BenchmarkRun(
+        id=str(uuid.uuid4()), recorded_at=datetime.utcnow(), cycle_id=cycle_id,
+        trigger=trigger, n_items=len(items), n_pass=n_pass, n_fail=n_fail,
+        n_unscorable=n_unscorable, accuracy=accuracy,
+    )
+    item_results = [
+        BenchmarkItemResult(
+            id=str(uuid.uuid4()), run_id=run.id, item_id=o.item_id,
+            experiment_id=o.experiment_id, metric_name=o.metric_name,
+            expected_value=o.expected_value, tolerance=o.tolerance,
+            tolerance_type=o.tolerance_type, measured_value=o.measured_value,
+            passed=o.passed, status=o.status,
+        )
+        for o in outcomes
+    ]
+    save_run(run, item_results)
+
+    points = build_metric_points(outcomes)
+    snapshot_cycle = cycle_id or f"benchmark-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
+    save_metrics(points, cycle_id=snapshot_cycle)
+
+    log.info("benchmark_scorer.run_recorded", run_id=run.id, n_items=len(items),
+             n_pass=n_pass, n_fail=n_fail, n_unscorable=n_unscorable, accuracy=accuracy)
+    return run
