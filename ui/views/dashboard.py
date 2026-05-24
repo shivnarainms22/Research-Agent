@@ -38,6 +38,57 @@ def _get_paper_count() -> int:
     return len(get_all_papers(limit=100_000))
 
 
+@st.cache_data(ttl=8)
+def _get_reproduction_metric(dimension: str = "overall") -> dict:
+    """Return latest reproduction rate + trend for the dashboard tile."""
+    from knowledge.eval_metric_store import get_latest, get_trend
+    latest = get_latest("reproduction_rate", dimension)
+    latest_partial = get_latest("partial_rate", dimension)
+    trend = get_trend("reproduction_rate", dimension, limit=12)
+    return {
+        "value": latest.value if latest else None,
+        "n": latest.denominator if latest else 0,
+        "partial": latest_partial.value if latest_partial else None,
+        "trend": [{"cycle": r.cycle_id, "value": r.value} for r in trend if r.value is not None],
+    }
+
+
+def _reproduction_rate_tile() -> None:
+    """Dashboard tile: big-number repro rate + sparkline + dimension selector."""
+    import pandas as pd
+    st.subheader("Reproduction Rate")
+
+    dim = st.selectbox(
+        "Slice by",
+        options=[
+            "overall",
+            "difficulty:easy", "difficulty:medium", "difficulty:hard",
+            "target:local", "target:cloud_modal",
+            "source:arxiv", "source:semantic_scholar", "source:substack",
+        ],
+        index=0,
+        key="repro_rate_dim",
+    )
+    data = _get_reproduction_metric(dim)
+
+    c1, c2 = st.columns([1, 3])
+    if data["value"] is None:
+        c1.metric("Latest", "—")
+    else:
+        c1.metric("Latest", f"{data['value'] * 100:.1f}%")
+    sub_bits = [f"n = {data['n']}"]
+    if data["partial"] is not None:
+        sub_bits.append(f"partial: {data['partial'] * 100:.1f}%")
+    c1.caption(" • ".join(sub_bits))
+
+    if data["trend"]:
+        df = pd.DataFrame(data["trend"])
+        df["value_pct"] = df["value"] * 100
+        c2.line_chart(df, x="cycle", y="value_pct", height=160)
+    else:
+        c2.info("No comparable experiments recorded yet — trend will appear after the first cycle with a baseline comparison.")
+
+
 def _get_recent_cycles() -> list[dict]:
     cycles = []
     for p in sorted(settings.state_dir.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)[:10]:
@@ -303,6 +354,11 @@ def render() -> None:
 
     # Pipeline status — auto-refreshes every 3s without full-page dim
     _pipeline_status_fragment()
+
+    st.divider()
+
+    # SP1 of the Eval Harness: north-star metric tile.
+    _reproduction_rate_tile()
 
     st.divider()
 

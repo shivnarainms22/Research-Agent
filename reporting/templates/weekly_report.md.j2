@@ -153,12 +153,10 @@
 
 - The system has tracked **{{ total_papers }}** papers to date.
 - **{{ total_experiments }}** experiments have been run and completed.
-{% if reproduction_rate == 0 %}
-- No experiments have matched their paper's claimed results yet.
-{% elif reproduction_rate < 50 %}
-- Reproduction rate: {{ reproduction_rate }}% — fewer than half of experiments matched their paper's claimed results.
+{% if reproduction_rate is none %}
+- Reproduction rate: — (no comparable experiments this cycle).
 {% else %}
-- Reproduction rate: {{ reproduction_rate }}% — at least half of experiments matched their paper's claimed results.
+- Reproduction rate: **{{ reproduction_rate }}%** (n={{ repro_n }}{% if partial_rate is not none %}, partial: {{ partial_rate }}%{% endif %}){% if delta_pp is not none %} — Δ vs last cycle: {% if delta_pp > 0 %}+{% endif %}{{ delta_pp }} pp{% endif %}.
 {% endif %}
 
 ---

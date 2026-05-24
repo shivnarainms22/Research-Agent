@@ -141,6 +141,20 @@ class TokenUsageLog(SQLModel, table=True):
     recorded_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class EvalMetric(SQLModel, table=True):
+    __tablename__ = "eval_metric"
+
+    id: str = Field(primary_key=True)            # uuid4
+    metric: str = Field(index=True)              # "reproduction_rate" | "partial_rate" | (future)
+    dimension: str = Field(index=True, default="overall")  # "overall" | "difficulty:easy" | "target:local" | ...
+    value: Optional[float] = None                # fraction 0-1; None if denominator == 0
+    numerator: int = 0
+    denominator: int = 0
+    cycle_id: str = Field(index=True)            # real cycle_id, or "backfill-<YYYY-Www>"
+    recorded_at: datetime = Field(default_factory=datetime.utcnow)
+    context: str = "{}"                          # JSON: {"fully":3,"partial":1,"not":2}
+
+
 # ---------------------------------------------------------------------------
 # In-memory / file-backed models (Pydantic only)
 # ---------------------------------------------------------------------------

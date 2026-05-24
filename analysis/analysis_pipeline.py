@@ -65,6 +65,15 @@ def run(state: RunState) -> None:
                 log.error("analysis_pipeline.ablation_error", exp_id=exp.id, error=str(e))
 
     save_state(state)
+
+    # Eval-harness SP1: persist this cycle's reproduction-rate snapshot.
+    # Failure here must not abort the pipeline (mirrors contradiction_detector pattern).
+    try:
+        from analysis import reproduction_metrics
+        reproduction_metrics.record_cycle_snapshot(state)
+    except Exception as e:
+        log.error("analysis_pipeline.snapshot_error", error=str(e))
+
     log.info("analysis_pipeline.done")
 
 
