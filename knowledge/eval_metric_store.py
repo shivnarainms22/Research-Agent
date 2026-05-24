@@ -52,3 +52,45 @@ def count_rows() -> int:
     """Total rows in eval_metric. Used to gate the lazy backfill."""
     with Session(get_engine()) as session:
         return session.exec(select(func.count()).select_from(EvalMetric)).one()
+
+
+def get_latest(metric: str, dimension: str = "overall") -> Optional[EvalMetric]:
+    """Most recent row for (metric, dimension). None if no rows."""
+    with Session(get_engine()) as session:
+        return session.exec(
+            select(EvalMetric)
+            .where(EvalMetric.metric == metric)
+            .where(EvalMetric.dimension == dimension)
+            .order_by(EvalMetric.recorded_at.desc())
+            .limit(1)
+        ).first()
+
+
+def get_previous(
+    metric: str, dimension: str, before_cycle_id: str
+) -> Optional[EvalMetric]:
+    """Most recent row for (metric, dimension) excluding the given cycle_id."""
+    with Session(get_engine()) as session:
+        return session.exec(
+            select(EvalMetric)
+            .where(EvalMetric.metric == metric)
+            .where(EvalMetric.dimension == dimension)
+            .where(EvalMetric.cycle_id != before_cycle_id)
+            .order_by(EvalMetric.recorded_at.desc())
+            .limit(1)
+        ).first()
+
+
+def get_trend(
+    metric: str, dimension: str = "overall", limit: int = 30
+) -> list[EvalMetric]:
+    """Most recent N snapshots, returned oldest-first (for charts/sparklines)."""
+    with Session(get_engine()) as session:
+        rows = list(session.exec(
+            select(EvalMetric)
+            .where(EvalMetric.metric == metric)
+            .where(EvalMetric.dimension == dimension)
+            .order_by(EvalMetric.recorded_at.desc())
+            .limit(limit)
+        ).all())
+    return list(reversed(rows))
