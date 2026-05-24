@@ -159,3 +159,49 @@ def test_record_benchmark_run_empty_golden_set(in_memory_engine):
     from analysis.benchmark_scorer import record_benchmark_run
     run = record_benchmark_run(trigger="manual")
     assert run.n_items == 0 and run.accuracy is None
+
+
+def test_analysis_pipeline_scores_benchmark_when_golden_set_nonempty(in_memory_engine, monkeypatch):
+    from analysis import analysis_pipeline
+    from core.models import RunState
+    from datetime import datetime
+    from knowledge.benchmark_store import get_runs
+
+    monkeypatch.setattr(analysis_pipeline, "_generate_conclusion", lambda *a, **k: "")
+    _seed_item_and_result(in_memory_engine, item_id="i1", experiment_id="e1",
+                          metrics='{"accuracy": 0.91}')
+    state = RunState(cycle_id="cyc_bench", started_at=datetime.utcnow(),
+                     experiment_ids_this_cycle=["e1"])
+    analysis_pipeline.run(state)
+
+    runs = get_runs()
+    assert len(runs) == 1 and runs[0].cycle_id == "cyc_bench" and runs[0].trigger == "cycle"
+
+
+def test_analysis_pipeline_skips_benchmark_when_golden_set_empty(in_memory_engine, monkeypatch):
+    from analysis import analysis_pipeline
+    from core.models import RunState
+    from datetime import datetime
+    from knowledge.benchmark_store import get_runs
+
+    monkeypatch.setattr(analysis_pipeline, "_generate_conclusion", lambda *a, **k: "")
+    analysis_pipeline.run(RunState(cycle_id="c", started_at=datetime.utcnow(),
+                                   experiment_ids_this_cycle=[]))
+    assert get_runs() == []  # no golden set -> no run recorded
+
+
+def test_analysis_pipeline_swallows_benchmark_failure(in_memory_engine, monkeypatch):
+    from analysis import analysis_pipeline
+    from core.models import RunState
+    from datetime import datetime
+
+    monkeypatch.setattr(analysis_pipeline, "_generate_conclusion", lambda *a, **k: "")
+    _seed_item_and_result(in_memory_engine, item_id="i1", experiment_id="e1")
+
+    def boom(*a, **k):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr("analysis.benchmark_scorer.record_benchmark_run", boom)
+    # Must not raise.
+    analysis_pipeline.run(RunState(cycle_id="c", started_at=datetime.utcnow(),
+                                   experiment_ids_this_cycle=["e1"]))

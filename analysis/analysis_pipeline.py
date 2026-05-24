@@ -74,6 +74,16 @@ def run(state: RunState) -> None:
     except Exception as e:
         log.error("analysis_pipeline.snapshot_error", error=str(e))
 
+    # Eval-harness SP2: score the golden set against latest results (no compute).
+    # Skipped when the golden set is empty; failure never aborts the cycle.
+    try:
+        from knowledge.benchmark_store import get_items
+        if get_items(active_only=True):
+            from analysis import benchmark_scorer
+            benchmark_scorer.record_benchmark_run(cycle_id=state.cycle_id, trigger="cycle")
+    except Exception as e:
+        log.error("analysis_pipeline.benchmark_error", error=str(e))
+
     log.info("analysis_pipeline.done")
 
 
