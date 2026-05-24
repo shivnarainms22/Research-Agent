@@ -90,3 +90,153 @@ def test_tally_context_json_records_breakdown():
     overall = _by(points, "reproduction_rate", "overall")
     ctx = json.loads(overall.context)
     assert ctx == {"fully": 2, "partial": 1, "not": 1}
+
+
+def _seed_paper_experiment_result(
+    engine, *, paper_id="p1", source="arxiv", difficulty="easy",
+    experiment_id="e1", target="local", parent_id=None,
+    overall="fully_reproduced", with_baseline_comparison=True,
+):
+    """Seed one Paper + one PaperAnalysis + one Experiment + one ExperimentResult."""
+    import json
+    from datetime import date, datetime
+    from sqlmodel import Session
+    from core.models import Paper, PaperAnalysis, Experiment, ExperimentResult
+
+    with Session(engine, expire_on_commit=False) as session:
+        if not session.get(Paper, paper_id):
+            session.add(Paper(
+                id=paper_id, title=f"Paper {paper_id}", abstract="",
+                source=source, source_id=paper_id, url="http://x", pdf_url=None,
+                published_date=date(2025, 1, 1), full_text=None,
+            ))
+            session.add(PaperAnalysis(
+                id=f"analysis_{paper_id}", paper_id=paper_id,
+                reproducibility_difficulty=difficulty,
+            ))
+        session.add(Experiment(
+            id=experiment_id, paper_id=paper_id, title=f"Exp {experiment_id}",
+            hypothesis="h", execution_target=target, status="completed",
+            parent_experiment_id=parent_id,
+        ))
+        bc = json.dumps({"overall": overall, "comparisons": []}) if with_baseline_comparison else None
+        session.add(ExperimentResult(
+            id=f"result_{experiment_id}", experiment_id=experiment_id,
+            exit_code=0, metrics="{}", baseline_comparison=bc,
+            recorded_at=datetime.utcnow(),
+        ))
+        session.commit()
+
+
+def test_gather_verdicts_returns_rows_for_completed_with_baseline(in_memory_engine):
+    from analysis.reproduction_metrics import gather_verdicts
+
+    _seed_paper_experiment_result(in_memory_engine, experiment_id="e_full",
+                                  overall="fully_reproduced", difficulty="easy",
+                                  target="local", source="arxiv")
+    _seed_paper_experiment_result(in_memory_engine, paper_id="p2",
+                                  experiment_id="e_not", overall="not_reproduced",
+                                  difficulty="hard", target="cloud_modal", source="semantic_scholar")
+
+    rows = gather_verdicts()
+    assert {r.overall for r in rows} == {"fully_reproduced", "not_reproduced"}
+    assert {r.difficulty for r in rows} == {"easy", "hard"}
+    assert {r.target for r in rows} == {"local", "cloud_modal"}
+    assert {r.source for r in rows} == {"arxiv", "semantic_scholar"}
+
+
+def test_gather_verdicts_excludes_ablations(in_memory_engine):
+    from analysis.reproduction_metrics import gather_verdicts
+    _seed_paper_experiment_result(in_memory_engine, experiment_id="parent",
+                                  overall="fully_reproduced")
+    _seed_paper_experiment_result(in_memory_engine, experiment_id="abl",
+                                  overall="fully_reproduced", parent_id="parent")
+    rows = gather_verdicts()
+    assert len(rows) == 1  # only the parent
+
+
+def test_gather_verdicts_excludes_no_baseline_comparison(in_memory_engine):
+    from analysis.reproduction_metrics import gather_verdicts
+    _seed_paper_experiment_result(in_memory_engine, experiment_id="no_bc",
+                                  with_baseline_comparison=False)
+    assert gather_verdicts() == []
+
+
+def test_gather_verdicts_excludes_non_comparable_verdicts(in_memory_engine):
+    """Results with overall='no_experiments' (or {status: ...}) must not appear."""
+    import json
+    from datetime import date, datetime
+    from sqlmodel import Session
+    from core.models import Paper, PaperAnalysis, Experiment, ExperimentResult
+    from analysis.reproduction_metrics import gather_verdicts
+
+    with Session(in_memory_engine, expire_on_commit=False) as session:
+        session.add(Paper(id="p", title="t", abstract="", source="arxiv",
+                          source_id="p", url="x", published_date=date(2025,1,1)))
+        session.add(PaperAnalysis(id="a", paper_id="p"))
+        session.add(Experiment(id="e", paper_id="p", title="t", hypothesis="h",
+                               execution_target="local", status="completed"))
+        session.add(ExperimentResult(
+            id="r", experiment_id="e", exit_code=0, metrics="{}",
+            baseline_comparison=json.dumps({"status": "no_analysis"}),
+            recorded_at=datetime.utcnow(),
+        ))
+        session.commit()
+    assert gather_verdicts() == []
+
+
+def test_gather_verdicts_filters_by_experiment_ids(in_memory_engine):
+    from analysis.reproduction_metrics import gather_verdicts
+    _seed_paper_experiment_result(in_memory_engine, experiment_id="keep")
+    _seed_paper_experiment_result(in_memory_engine, paper_id="p2",
+                                  experiment_id="drop", overall="not_reproduced")
+    rows = gather_verdicts(experiment_ids=["keep"])
+    assert len(rows) == 1
+    assert rows[0].overall == "fully_reproduced"
+
+
+def test_gather_verdicts_tolerates_missing_analysis(in_memory_engine):
+    """An experiment whose paper has no PaperAnalysis row still produces a verdict, with difficulty='unknown'."""
+    import json
+    from datetime import date, datetime
+    from sqlmodel import Session
+    from core.models import Paper, Experiment, ExperimentResult
+    from analysis.reproduction_metrics import gather_verdicts
+
+    with Session(in_memory_engine, expire_on_commit=False) as session:
+        session.add(Paper(id="p", title="t", abstract="", source="arxiv",
+                          source_id="p", url="x", published_date=date(2025,1,1)))
+        session.add(Experiment(id="e", paper_id="p", title="t", hypothesis="h",
+                               execution_target="local", status="completed"))
+        session.add(ExperimentResult(
+            id="r", experiment_id="e", exit_code=0, metrics="{}",
+            baseline_comparison=json.dumps({"overall": "fully_reproduced", "comparisons": []}),
+            recorded_at=datetime.utcnow(),
+        ))
+        session.commit()
+
+    rows = gather_verdicts()
+    assert len(rows) == 1
+    assert rows[0].difficulty == "unknown"
+    assert rows[0].source == "arxiv"
+
+
+def test_gather_verdicts_warns_on_malformed_baseline(in_memory_engine, caplog):
+    import json
+    from datetime import date, datetime
+    from sqlmodel import Session
+    from core.models import Paper, Experiment, ExperimentResult
+    from analysis.reproduction_metrics import gather_verdicts
+
+    with Session(in_memory_engine, expire_on_commit=False) as session:
+        session.add(Paper(id="p", title="t", abstract="", source="arxiv",
+                          source_id="p", url="x", published_date=date(2025,1,1)))
+        session.add(Experiment(id="e", paper_id="p", title="t", hypothesis="h",
+                               execution_target="local", status="completed"))
+        session.add(ExperimentResult(
+            id="r", experiment_id="e", exit_code=0, metrics="{}",
+            baseline_comparison="not json{{{",
+            recorded_at=datetime.utcnow(),
+        ))
+        session.commit()
+    assert gather_verdicts() == []
