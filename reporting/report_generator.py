@@ -306,11 +306,30 @@ def generate(state: RunState, report_type: str = "weekly") -> ResearchReport:
     # Count stats
     total_papers = len(get_all_papers(limit=10000))
     total_experiments = len(all_completed)
-    reproduced = sum(
-        1 for s in exp_sections
-        if s["baseline_status"] in ("fully_reproduced", "partially_reproduced")
+
+    # SP1: pull reproduction rate from the eval-metric store (replaces ad-hoc per-report math).
+    from knowledge.eval_metric_store import get_latest, get_previous
+    latest = get_latest("reproduction_rate", "overall")
+    latest_partial = get_latest("partial_rate", "overall")
+    previous = get_previous("reproduction_rate", "overall", before_cycle_id=state.cycle_id)
+
+    if latest is None or latest.value is None:
+        reproduction_rate = None
+        repro_n = latest.denominator if latest else 0
+    else:
+        reproduction_rate = round(latest.value * 100, 1)
+        repro_n = latest.denominator
+
+    partial_rate = (
+        round(latest_partial.value * 100, 1)
+        if latest_partial and latest_partial.value is not None else None
     )
-    reproduction_rate = round(reproduced / max(len(exp_sections), 1) * 100, 1)
+
+    if (latest and latest.value is not None
+            and previous and previous.value is not None):
+        delta_pp = round((latest.value - previous.value) * 100, 1)
+    else:
+        delta_pp = None
 
     # Render Markdown via Jinja2
     env = jinja2.Environment(
@@ -334,6 +353,9 @@ def generate(state: RunState, report_type: str = "weekly") -> ResearchReport:
         total_papers=total_papers,
         total_experiments=total_experiments,
         reproduction_rate=reproduction_rate,
+        repro_n=repro_n,
+        partial_rate=partial_rate,
+        delta_pp=delta_pp,
         contradictions=contradictions,
         gaps=gaps,
         themes=themes,
