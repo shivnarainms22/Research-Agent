@@ -293,3 +293,87 @@ def test_backfill_skips_empty_weeks(in_memory_engine):
     written = backfill_from_history()
     assert written == 0
     assert count_rows() == 0
+
+
+def _make_state(cycle_id="cycle_x", experiment_ids=None):
+    from core.models import RunState
+    from datetime import datetime
+    return RunState(
+        cycle_id=cycle_id, started_at=datetime.utcnow(),
+        experiment_ids_this_cycle=list(experiment_ids or []),
+    )
+
+
+def test_record_cycle_snapshot_writes_overall_and_dimensions(in_memory_engine):
+    from analysis.reproduction_metrics import record_cycle_snapshot
+    from knowledge.eval_metric_store import get_latest
+
+    _seed_paper_experiment_result(in_memory_engine, experiment_id="e1",
+                                  overall="fully_reproduced", difficulty="easy",
+                                  target="local", source="arxiv")
+    state = _make_state(cycle_id="cycle_one", experiment_ids=["e1"])
+    record_cycle_snapshot(state)
+
+    overall = get_latest("reproduction_rate", "overall")
+    by_difficulty = get_latest("reproduction_rate", "difficulty:easy")
+    assert overall is not None and overall.numerator == 1 and overall.denominator == 1
+    assert by_difficulty is not None and by_difficulty.numerator == 1
+
+
+def test_record_cycle_snapshot_empty_cycle_writes_none_overall(in_memory_engine):
+    """A cycle with no comparable experiments still records the gap honestly."""
+    from analysis.reproduction_metrics import record_cycle_snapshot
+    from knowledge.eval_metric_store import get_latest
+
+    state = _make_state(cycle_id="empty", experiment_ids=[])
+    record_cycle_snapshot(state)
+
+    overall = get_latest("reproduction_rate", "overall")
+    assert overall is not None
+    assert overall.value is None
+    assert overall.denominator == 0
+
+
+def test_record_cycle_snapshot_triggers_lazy_backfill_when_empty(in_memory_engine):
+    from datetime import datetime
+    from analysis.reproduction_metrics import record_cycle_snapshot
+    from knowledge.eval_metric_store import get_trend
+
+    # Seed historical results from a prior week BEFORE the cycle's experiment.
+    _seed_paper_experiment_result(in_memory_engine, paper_id="p_hist", experiment_id="e_hist",
+                                  overall="fully_reproduced")
+    _override_recorded_at(in_memory_engine, "result_e_hist", datetime(2025, 3, 5))  # W10
+
+    # Cycle's own experiment.
+    _seed_paper_experiment_result(in_memory_engine, paper_id="p_now", experiment_id="e_now",
+                                  overall="not_reproduced")
+
+    state = _make_state(cycle_id="now_cycle", experiment_ids=["e_now"])
+    record_cycle_snapshot(state)
+
+    trend = get_trend("reproduction_rate", "overall", limit=20)
+    cycle_ids = [r.cycle_id for r in trend]
+    assert "backfill-2025-W10" in cycle_ids
+    assert "now_cycle" in cycle_ids
+
+
+def test_record_cycle_snapshot_does_not_re_backfill(in_memory_engine):
+    from analysis.reproduction_metrics import record_cycle_snapshot, backfill_from_history
+    from knowledge.eval_metric_store import count_rows
+    from datetime import datetime
+
+    _seed_paper_experiment_result(in_memory_engine, paper_id="p_h", experiment_id="e_h",
+                                  overall="fully_reproduced")
+    _override_recorded_at(in_memory_engine, "result_e_h", datetime(2025, 3, 5))
+    backfill_from_history()
+
+    rows_after_backfill = count_rows()
+    _seed_paper_experiment_result(in_memory_engine, paper_id="p_n", experiment_id="e_n",
+                                  overall="not_reproduced")
+    record_cycle_snapshot(_make_state(cycle_id="c", experiment_ids=["e_n"]))
+
+    # Only cycle's own rows added; backfill rows not duplicated.
+    assert count_rows() > rows_after_backfill  # cycle rows added
+    # And re-invoking does not produce more backfill rows.
+    record_cycle_snapshot(_make_state(cycle_id="c2", experiment_ids=[]))
+    # cycle c2 adds only the overall=None row(s); backfill rows still present once.

@@ -189,3 +189,24 @@ def backfill_from_history() -> int:
         written += len(points)
     log.info("reproduction_metrics.backfill_done", rows_written=written)
     return written
+
+
+def record_cycle_snapshot(state) -> None:
+    """End-of-stage hook: lazy-backfill if store empty, then tally this cycle's experiments and save.
+
+    `state` is a RunState. Empty `experiment_ids_this_cycle` still writes overall=None
+    so the trend honestly records the gap.
+    """
+    from knowledge.eval_metric_store import count_rows, save_metrics
+
+    if count_rows() == 0:
+        backfill_from_history()
+
+    verdicts = gather_verdicts(experiment_ids=state.experiment_ids_this_cycle)
+    points = tally(verdicts)
+    save_metrics(points, cycle_id=state.cycle_id)
+    log.info(
+        "reproduction_metrics.snapshot_recorded",
+        cycle_id=state.cycle_id, points_written=len(points),
+        verdict_rows=len(verdicts),
+    )
