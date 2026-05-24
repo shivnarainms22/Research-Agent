@@ -377,3 +377,37 @@ def test_record_cycle_snapshot_does_not_re_backfill(in_memory_engine):
     # And re-invoking does not produce more backfill rows.
     record_cycle_snapshot(_make_state(cycle_id="c2", experiment_ids=[]))
     # cycle c2 adds only the overall=None row(s); backfill rows still present once.
+
+
+def test_analysis_pipeline_records_snapshot(in_memory_engine, monkeypatch):
+    """After analysis_pipeline.run completes, a snapshot row exists for the cycle."""
+    from analysis import analysis_pipeline
+    from knowledge.eval_metric_store import get_latest
+
+    # Disable Claude conclusion generation (no API key in tests, no network).
+    monkeypatch.setattr(analysis_pipeline, "_generate_conclusion", lambda *a, **k: "")
+
+    _seed_paper_experiment_result(in_memory_engine, experiment_id="e1",
+                                  overall="fully_reproduced", difficulty="easy")
+    state = _make_state(cycle_id="cycle_ap", experiment_ids=["e1"])
+    analysis_pipeline.run(state)
+
+    latest = get_latest("reproduction_rate", "overall")
+    assert latest is not None
+    assert latest.cycle_id == "cycle_ap"
+
+
+def test_analysis_pipeline_swallows_snapshot_failure(in_memory_engine, monkeypatch, caplog):
+    """A failure inside record_cycle_snapshot must not abort analysis_pipeline.run."""
+    from analysis import analysis_pipeline
+
+    monkeypatch.setattr(analysis_pipeline, "_generate_conclusion", lambda *a, **k: "")
+
+    def boom(_state):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(
+        "analysis.reproduction_metrics.record_cycle_snapshot", boom
+    )
+    # Must not raise.
+    analysis_pipeline.run(_make_state(cycle_id="c", experiment_ids=[]))
