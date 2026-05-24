@@ -45,9 +45,32 @@ def save_analysis(analysis: PaperAnalysis) -> None:
 
 def get_analysis(paper_id: str) -> Optional[PaperAnalysis]:
     with Session(get_engine()) as session:
-        return session.exec(
-            select(PaperAnalysis).where(PaperAnalysis.paper_id == paper_id)
-        ).first()
+        try:
+            return session.exec(
+                select(PaperAnalysis).where(PaperAnalysis.paper_id == paper_id)
+            ).first()
+        except ValueError:
+            # Defensive: a legacy column-corrupt row (non-datetime text in the DATETIME
+            # analyzed_at column — see core/repair.py) crashes the full-entity load. Fall
+            # back to the non-DATETIME columns so callers still get the intact fields
+            # (contributions/methods/scores) instead of a hard failure. Run core.repair to
+            # fix the underlying data permanently.
+            log.warning("paper_store.corrupt_analysis_fallback", paper_id=paper_id)
+            row = session.exec(
+                select(
+                    PaperAnalysis.id, PaperAnalysis.paper_id,
+                    PaperAnalysis.key_contributions, PaperAnalysis.methods_described,
+                    PaperAnalysis.reproducible_experiments,
+                    PaperAnalysis.novelty_score, PaperAnalysis.relevance_score,
+                ).where(PaperAnalysis.paper_id == paper_id)
+            ).first()
+            if row is None:
+                return None
+            return PaperAnalysis(
+                id=row[0], paper_id=row[1], key_contributions=row[2],
+                methods_described=row[3], reproducible_experiments=row[4],
+                novelty_score=row[5], relevance_score=row[6],
+            )
 
 
 def update_paper_full_text(paper_id: str, full_text: Optional[str]) -> None:
