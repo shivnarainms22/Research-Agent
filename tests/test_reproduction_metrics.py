@@ -240,3 +240,56 @@ def test_gather_verdicts_warns_on_malformed_baseline(in_memory_engine, caplog):
         ))
         session.commit()
     assert gather_verdicts() == []
+
+
+def _override_recorded_at(engine, result_id: str, when):
+    from sqlmodel import Session
+    from core.models import ExperimentResult
+    with Session(engine, expire_on_commit=False) as session:
+        r = session.get(ExperimentResult, result_id)
+        r.recorded_at = when
+        session.add(r)
+        session.commit()
+
+
+def test_backfill_buckets_by_iso_week(in_memory_engine):
+    from datetime import datetime
+    from analysis.reproduction_metrics import backfill_from_history
+    from knowledge.eval_metric_store import get_trend
+
+    # Week 2025-W10 vs 2025-W20 (well-separated weeks).
+    _seed_paper_experiment_result(in_memory_engine, experiment_id="e_a", overall="fully_reproduced")
+    _override_recorded_at(in_memory_engine, "result_e_a", datetime(2025, 3, 5))   # W10
+    _seed_paper_experiment_result(in_memory_engine, paper_id="p2", experiment_id="e_b",
+                                  overall="not_reproduced")
+    _override_recorded_at(in_memory_engine, "result_e_b", datetime(2025, 5, 14))  # W20
+
+    written = backfill_from_history()
+    assert written > 0
+    trend = get_trend("reproduction_rate", "overall", limit=10)
+    cycle_ids = {row.cycle_id for row in trend}
+    assert "backfill-2025-W10" in cycle_ids
+    assert "backfill-2025-W20" in cycle_ids
+
+
+def test_backfill_is_idempotent(in_memory_engine):
+    from datetime import datetime
+    from analysis.reproduction_metrics import backfill_from_history
+    from knowledge.eval_metric_store import count_rows
+
+    _seed_paper_experiment_result(in_memory_engine, experiment_id="e1", overall="fully_reproduced")
+    _override_recorded_at(in_memory_engine, "result_e1", datetime(2025, 3, 5))
+
+    backfill_from_history()
+    n = count_rows()
+    backfill_from_history()
+    assert count_rows() == n  # second invocation writes nothing
+
+
+def test_backfill_skips_empty_weeks(in_memory_engine):
+    """If no comparable rows exist, no backfill rows are written."""
+    from analysis.reproduction_metrics import backfill_from_history
+    from knowledge.eval_metric_store import count_rows
+    written = backfill_from_history()
+    assert written == 0
+    assert count_rows() == 0

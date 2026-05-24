@@ -143,3 +143,49 @@ def gather_verdicts(experiment_ids: Optional[Iterable[str]] = None) -> list[Verd
             recorded_at=r.recorded_at,
         ))
     return out
+
+
+def backfill_from_history() -> int:
+    """One-shot: bucket all historical comparable results by ISO week of recorded_at.
+
+    Idempotent: existing backfill-* cycle_ids are skipped. Returns the count of rows written.
+    """
+    from sqlmodel import Session, select
+    from core.database import get_engine
+    from core.models import EvalMetric
+    from knowledge.eval_metric_store import save_metrics
+
+    rows = gather_verdicts(experiment_ids=None)
+    if not rows:
+        return 0
+
+    # Bucket by ISO week
+    buckets: dict[str, list[VerdictRow]] = {}
+    for r in rows:
+        iso_year, iso_week, _ = r.recorded_at.isocalendar()
+        cycle_id = f"backfill-{iso_year}-W{iso_week:02d}"
+        buckets.setdefault(cycle_id, []).append(r)
+
+    # Idempotency: skip cycle_ids already present.
+    # NOTE: SQLModel single-column `select(EvalMetric.cycle_id)` returns SCALARS, not tuples
+    # (see CLAUDE.md "Bugs Fixed" #2). Do NOT index `row[0]`.
+    with Session(get_engine()) as session:
+        existing = set(session.exec(
+            select(EvalMetric.cycle_id).where(EvalMetric.cycle_id.in_(list(buckets)))
+        ).all())
+
+    written = 0
+    for cycle_id, week_rows in sorted(buckets.items()):
+        if cycle_id in existing:
+            continue
+        points = tally(week_rows)
+        overall_repro = next(
+            (p for p in points if p.metric == "reproduction_rate" and p.dimension == "overall"),
+            None,
+        )
+        if overall_repro is None or overall_repro.denominator == 0:
+            continue  # nothing comparable this week
+        save_metrics(points, cycle_id=cycle_id)
+        written += len(points)
+    log.info("reproduction_metrics.backfill_done", rows_written=written)
+    return written
