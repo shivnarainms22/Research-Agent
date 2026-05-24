@@ -252,6 +252,7 @@ PAGE_LABELS = [
     "⊞  Dashboard",
     "＋  Add Paper",
     "✓  Review Queue",
+    "◎  Benchmark",
     "◫  Papers",
     "⚗  Experiments",
     "◉  Living Review",
@@ -294,6 +295,9 @@ elif page == "Add Paper":
     render()
 elif page == "Review Queue":
     from ui.views.review import render
+    render()
+elif page == "Benchmark":
+    from ui.views.benchmark import render
     render()
 elif page == "Papers":
     from ui.views.papers import render
