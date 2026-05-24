@@ -31,3 +31,34 @@ def test_benchmark_tables_are_created(in_memory_engine):
     assert items[0].expected_value == 0.92 and items[0].active is True
     assert runs[0].accuracy == 1.0
     assert results[0].passed is True and results[0].status == "pass"
+
+
+def _item(item_id="i1", experiment_id="e1", active=True):
+    from core.models import BenchmarkItem
+    return BenchmarkItem(
+        id=item_id, experiment_id=experiment_id, metric_name="accuracy",
+        expected_value=0.9, tolerance=0.05, tolerance_type="relative", active=active,
+    )
+
+
+def test_save_and_get_items_active_only(in_memory_engine):
+    from knowledge.benchmark_store import save_item, get_items
+    save_item(_item("i1"))
+    save_item(_item("i2", active=False))
+    active = get_items(active_only=True)
+    assert {i.id for i in active} == {"i1"}
+    allitems = get_items(active_only=False)
+    assert {i.id for i in allitems} == {"i1", "i2"}
+
+
+def test_get_item_returns_none_for_unknown(in_memory_engine):
+    from knowledge.benchmark_store import get_item
+    assert get_item("nope") is None
+
+
+def test_deactivate_item(in_memory_engine):
+    from knowledge.benchmark_store import save_item, deactivate_item, get_items, get_item
+    save_item(_item("i1"))
+    deactivate_item("i1")
+    assert get_items(active_only=True) == []
+    assert get_item("i1").active is False
