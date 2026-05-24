@@ -49,7 +49,7 @@ def _migrate_db(engine) -> None:
 
 def init_db() -> None:
     """Create all tables if they don't exist."""
-    from core.models import Paper, PaperAnalysis, Experiment, ExperimentResult, ResearchReport, Contradiction, ResearchGap, ThemeCluster, TokenUsageLog, EvalMetric  # noqa: F401
+    from core.models import Paper, PaperAnalysis, Experiment, ExperimentResult, ResearchReport, Contradiction, ResearchGap, ThemeCluster, TokenUsageLog, EvalMetric, BenchmarkItem, BenchmarkRun, BenchmarkItemResult  # noqa: F401
     engine = get_engine()
     SQLModel.metadata.create_all(engine)
     _migrate_db(engine)

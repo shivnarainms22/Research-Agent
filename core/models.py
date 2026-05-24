@@ -155,6 +155,52 @@ class EvalMetric(SQLModel, table=True):
     context: str = "{}"                          # JSON: {"fully":3,"partial":1,"not":2}
 
 
+class BenchmarkItem(SQLModel, table=True):
+    __tablename__ = "benchmark_item"
+
+    id: str = Field(primary_key=True)                 # uuid4
+    experiment_id: str = Field(index=True)            # experiment this claim is scored against
+    metric_name: str                                  # key in ExperimentResult.metrics JSON
+    expected_value: float                             # the paper's known/true value
+    tolerance: float                                  # band half-width
+    tolerance_type: str = "relative"                  # "relative" (% of expected) | "absolute"
+    unit: Optional[str] = None                        # display only
+    note: str = ""                                    # provenance / why this is ground truth
+    active: bool = True                               # deactivate instead of hard-delete
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class BenchmarkRun(SQLModel, table=True):
+    __tablename__ = "benchmark_run"
+
+    id: str = Field(primary_key=True)                 # uuid4
+    recorded_at: datetime = Field(default_factory=datetime.utcnow)
+    cycle_id: Optional[str] = Field(default=None, index=True)  # pipeline cycle, or None for manual
+    trigger: str = "manual"                            # "cycle" | "manual"
+    n_items: int = 0
+    n_pass: int = 0
+    n_fail: int = 0
+    n_unscorable: int = 0
+    accuracy: Optional[float] = None                   # n_pass / scorable; None if 0 scorable
+
+
+class BenchmarkItemResult(SQLModel, table=True):
+    __tablename__ = "benchmark_item_result"
+
+    id: str = Field(primary_key=True)                 # uuid4
+    run_id: str = Field(index=True)
+    item_id: str = Field(index=True)
+    experiment_id: str
+    metric_name: str
+    expected_value: float
+    tolerance: float
+    tolerance_type: str
+    measured_value: Optional[float] = None            # None when unscorable
+    passed: Optional[bool] = None                     # None when unscorable
+    status: str                                        # pass|fail|no_result|missing_metric|non_numeric
+
+
 # ---------------------------------------------------------------------------
 # In-memory / file-backed models (Pydantic only)
 # ---------------------------------------------------------------------------
