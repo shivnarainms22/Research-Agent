@@ -77,3 +77,71 @@ def score(measurements: list[Measurement]) -> list[ItemOutcome]:
             difficulty=m.difficulty, source=m.source,
         ))
     return out
+
+
+def _extract_numeric(metrics: dict, key: str) -> tuple[Optional[float], str]:
+    """Return (value, status). status ∈ {ok, missing_metric, non_numeric}."""
+    if key not in metrics:
+        return None, "missing_metric"
+    v = metrics[key]
+    if isinstance(v, bool):  # bool is a subclass of int — reject explicitly
+        return None, "non_numeric"
+    if isinstance(v, (int, float)):
+        return float(v), "ok"
+    if isinstance(v, list):
+        nums = [float(x) for x in v if isinstance(x, (int, float)) and not isinstance(x, bool)]
+        if nums:
+            return sum(nums) / len(nums), "ok"
+    return None, "non_numeric"
+
+
+def gather_measurements(items: list[BenchmarkItem]) -> list[Measurement]:
+    """For each item, read its experiment's latest ExperimentResult and pull metric_name.
+
+    Joins Experiment/Paper/PaperAnalysis for the difficulty/source dimensions, selecting only
+    the columns needed (never loads the corrupt paper_analysis.analyzed_at — see SP1 hardening).
+    """
+    from sqlmodel import Session, select
+    from core.database import get_engine
+    from core.models import Experiment, ExperimentResult, Paper, PaperAnalysis
+
+    if not items:
+        return []
+
+    exp_ids = list({it.experiment_id for it in items})
+    with Session(get_engine()) as session:
+        experiments = {e.id: e for e in session.exec(
+            select(Experiment).where(Experiment.id.in_(exp_ids))
+        ).all()}
+        paper_ids = list({e.paper_id for e in experiments.values()})
+        results = {r.experiment_id: r for r in session.exec(
+            select(ExperimentResult).where(ExperimentResult.experiment_id.in_(exp_ids))
+        ).all()}
+        sources = {pid: src for pid, src in session.exec(
+            select(Paper.id, Paper.source).where(Paper.id.in_(paper_ids))
+        ).all()} if paper_ids else {}
+        difficulties = {pid: diff for pid, diff in session.exec(
+            select(PaperAnalysis.paper_id, PaperAnalysis.reproducibility_difficulty)
+            .where(PaperAnalysis.paper_id.in_(paper_ids))
+        ).all()} if paper_ids else {}
+
+    out: list[Measurement] = []
+    for it in items:
+        exp = experiments.get(it.experiment_id)
+        paper_id = exp.paper_id if exp else None
+        raw_diff = difficulties.get(paper_id, "unknown")
+        difficulty = raw_diff if raw_diff in _DIFFICULTIES else "unknown"
+        source = sources.get(paper_id, "unknown")
+
+        result = results.get(it.experiment_id)
+        if result is None or not result.metrics:
+            out.append(Measurement(it, None, difficulty, source, "no_result"))
+            continue
+        try:
+            metrics = json.loads(result.metrics)
+        except (json.JSONDecodeError, TypeError):
+            out.append(Measurement(it, None, difficulty, source, "non_numeric"))
+            continue
+        value, status = _extract_numeric(metrics, it.metric_name)
+        out.append(Measurement(it, value, difficulty, source, status))
+    return out
