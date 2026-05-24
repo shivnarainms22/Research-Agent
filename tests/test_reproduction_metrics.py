@@ -242,6 +242,47 @@ def test_gather_verdicts_warns_on_malformed_baseline(in_memory_engine, caplog):
     assert gather_verdicts() == []
 
 
+def test_gather_verdicts_survives_corrupt_paper_analysis(in_memory_engine):
+    """Regression: a column-shifted paper_analysis row (analyzed_at holds 'medium',
+    difficulty holds '[]' — the live-DB historical-merge corruption) must not crash
+    gather_verdicts. Difficulty falls back to 'unknown'; the verdict still counts."""
+    import json
+    from datetime import date, datetime
+    from sqlmodel import Session
+    from sqlalchemy import text
+    from core.models import Paper, Experiment, ExperimentResult
+    from analysis.reproduction_metrics import gather_verdicts
+
+    with Session(in_memory_engine, expire_on_commit=False) as session:
+        session.add(Paper(id="p", title="t", abstract="", source="arxiv",
+                          source_id="p", url="x", published_date=date(2025, 1, 1)))
+        session.add(Experiment(id="e", paper_id="p", title="t", hypothesis="h",
+                               execution_target="local", status="completed"))
+        session.add(ExperimentResult(
+            id="r", experiment_id="e", exit_code=0, metrics="{}",
+            baseline_comparison=json.dumps({"overall": "fully_reproduced", "comparisons": []}),
+            recorded_at=datetime.utcnow(),
+        ))
+        session.commit()
+
+    # Insert a corrupt analysis row directly: analyzed_at (DATETIME) gets the text 'medium',
+    # reproducibility_difficulty gets '[]' — mirrors the positional-shift corruption in the live DB.
+    with in_memory_engine.connect() as conn:
+        conn.execute(text(
+            "INSERT INTO paper_analysis "
+            "(id, paper_id, key_contributions, methods_described, reproducible_experiments, "
+            " novelty_score, relevance_score, limitations, datasets_used, key_hyperparameters, "
+            " reproducibility_difficulty, raw_claude_response, analyzed_at) "
+            "VALUES ('a', 'p', '[]', '[]', '[]', 0.0, 0.0, '[]', '[]', '{}', '[]', '', 'medium')"
+        ))
+        conn.commit()
+
+    rows = gather_verdicts()  # must not raise
+    assert len(rows) == 1
+    assert rows[0].overall == "fully_reproduced"
+    assert rows[0].difficulty == "unknown"  # '[]' is not a real difficulty → normalized
+
+
 def _override_recorded_at(engine, result_id: str, when):
     from sqlmodel import Session
     from core.models import ExperimentResult

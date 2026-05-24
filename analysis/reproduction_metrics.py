@@ -17,6 +17,7 @@ log = structlog.get_logger()
 
 _COMPARABLE = {"fully_reproduced", "partially_reproduced", "not_reproduced"}
 _UNKNOWN = {"", "unknown", None}
+_DIFFICULTIES = {"easy", "medium", "hard"}
 
 
 @dataclass
@@ -111,11 +112,17 @@ def gather_verdicts(experiment_ids: Optional[Iterable[str]] = None) -> list[Verd
             select(ExperimentResult).where(ExperimentResult.experiment_id.in_(list(exp_by_id)))
         ).all())
 
-        papers = {p.id: p for p in session.exec(
-            select(Paper).where(Paper.id.in_(list(paper_ids)))
+        # Select only the columns we need rather than full ORM entities. Loading a full
+        # PaperAnalysis would run a type processor over every column — and the live DB has
+        # historical rows whose DATETIME `analyzed_at` is corrupt (holds 'medium', from the
+        # column-shifted historical-merge in CLAUDE.md bug #12). Parsing it raises ValueError.
+        # We only need `source` and `reproducibility_difficulty`, so we never touch it.
+        papers = {pid: src for pid, src in session.exec(
+            select(Paper.id, Paper.source).where(Paper.id.in_(list(paper_ids)))
         ).all()}
-        analyses = {a.paper_id: a for a in session.exec(
-            select(PaperAnalysis).where(PaperAnalysis.paper_id.in_(list(paper_ids)))
+        analyses = {pid: diff for pid, diff in session.exec(
+            select(PaperAnalysis.paper_id, PaperAnalysis.reproducibility_difficulty)
+            .where(PaperAnalysis.paper_id.in_(list(paper_ids)))
         ).all()}
 
     out: list[VerdictRow] = []
@@ -133,13 +140,15 @@ def gather_verdicts(experiment_ids: Optional[Iterable[str]] = None) -> list[Verd
         exp = exp_by_id.get(r.experiment_id)
         if not exp:
             continue
-        paper = papers.get(exp.paper_id)
-        analysis = analyses.get(exp.paper_id)
+        raw_difficulty = analyses.get(exp.paper_id, "unknown")
+        # Corrupt rows (and any future drift) can hold a non-difficulty string; normalize to
+        # 'unknown' so tally() skips the sub-bucket instead of inventing a junk dimension.
+        difficulty = raw_difficulty if raw_difficulty in _DIFFICULTIES else "unknown"
         out.append(VerdictRow(
             overall=overall,
-            difficulty=(analysis.reproducibility_difficulty if analysis else "unknown"),
+            difficulty=difficulty,
             target=exp.execution_target,
-            source=(paper.source if paper else "unknown"),
+            source=papers.get(exp.paper_id, "unknown"),
             recorded_at=r.recorded_at,
         ))
     return out
