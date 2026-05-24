@@ -411,3 +411,43 @@ def test_analysis_pipeline_swallows_snapshot_failure(in_memory_engine, monkeypat
     )
     # Must not raise.
     analysis_pipeline.run(_make_state(cycle_id="c", experiment_ids=[]))
+
+
+def test_report_generator_renders_store_backed_rate(in_memory_engine, monkeypatch, tmp_path):
+    """End-to-end: snapshot then report; the rendered markdown contains the rigorous metric."""
+    from reporting import report_generator
+    from analysis.reproduction_metrics import record_cycle_snapshot
+    from config import settings
+
+    # Disable Claude narrative generation.
+    monkeypatch.setattr(report_generator, "_generate_narrative", lambda **kw: {})
+    # reports_dir is a read-only computed property (data_dir / "reports"); patch it on the
+    # class so report output lands in tmp_path instead of the real data directory.
+    monkeypatch.setattr(type(settings), "reports_dir", tmp_path)
+
+    _seed_paper_experiment_result(in_memory_engine, experiment_id="e1",
+                                  overall="fully_reproduced")
+    state = _make_state(cycle_id="cycle_rpt", experiment_ids=["e1"])
+    record_cycle_snapshot(state)
+
+    report = report_generator.generate(state)
+    md = report.markdown_content
+    assert "Reproduction rate:" in md
+    assert "100.0%" in md  # one of one comparable result = 100%
+    assert "n=1" in md
+
+
+def test_report_renders_dash_when_no_comparable(in_memory_engine, monkeypatch, tmp_path):
+    from reporting import report_generator
+    from analysis.reproduction_metrics import record_cycle_snapshot
+    from config import settings
+
+    monkeypatch.setattr(report_generator, "_generate_narrative", lambda **kw: {})
+    # reports_dir is a read-only computed property (data_dir / "reports"); patch it on the
+    # class so report output lands in tmp_path instead of the real data directory.
+    monkeypatch.setattr(type(settings), "reports_dir", tmp_path)
+
+    state = _make_state(cycle_id="cycle_empty", experiment_ids=[])
+    record_cycle_snapshot(state)
+    report = report_generator.generate(state)
+    assert "Reproduction rate: —" in report.markdown_content
