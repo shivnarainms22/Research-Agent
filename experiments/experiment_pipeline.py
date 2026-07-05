@@ -4,7 +4,6 @@ from __future__ import annotations
 import structlog
 
 from core.models import RunState
-from core.state import save_state
 from experiments import code_validator, local_runner, cloud_runner, router
 from experiments.result_collector import parse_metrics_from_stdout
 from knowledge.experiment_store import (
@@ -84,5 +83,4 @@ def run(state: RunState) -> None:
             increment_retry(exp.id)
             update_experiment_status(exp.id, "failed", error=str(e))
 
-    save_state(state)
     log.info("experiment_pipeline.done")

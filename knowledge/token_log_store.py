@@ -12,8 +12,13 @@ COST_PER_INPUT_TOKEN = 3 / 1_000_000
 COST_PER_OUTPUT_TOKEN = 15 / 1_000_000
 
 
+def estimate_cost(input_tokens: int, output_tokens: int) -> float:
+    """Estimated USD cost at the Sonnet blended rate (single source of truth)."""
+    return input_tokens * COST_PER_INPUT_TOKEN + output_tokens * COST_PER_OUTPUT_TOKEN
+
+
 def save_log(cycle_id: str, module: str, input_tokens: int, output_tokens: int) -> None:
-    cost = input_tokens * COST_PER_INPUT_TOKEN + output_tokens * COST_PER_OUTPUT_TOKEN
+    cost = estimate_cost(input_tokens, output_tokens)
     log_entry = TokenUsageLog(
         id=str(uuid.uuid4()),
         cycle_id=cycle_id,

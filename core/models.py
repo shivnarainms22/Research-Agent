@@ -27,7 +27,7 @@ class Paper(SQLModel, table=True):
     full_text: Optional[str] = None
     tags: str = "[]"                            # JSON list
     citation_count: Optional[int] = None
-    status: str = "fetched"                     # "fetched" | "analyzed" | "done"
+    status: str = Field(default="fetched", index=True)  # "fetched" | "analyzed" | "done"
 
 
 class PaperAnalysis(SQLModel, table=True):
@@ -57,7 +57,7 @@ class Experiment(SQLModel, table=True):
     hypothesis: str
     generated_code: str = ""
     execution_target: str = "local"            # "local" | "cloud_modal"
-    status: str = "pending_review"             # "pending_review"|"pending"|"running"|"completed"|"failed"|"skipped"
+    status: str = Field(default="pending_review", index=True)  # "pending_review"|"pending"|"running"|"completed"|"failed"|"skipped"
     parent_experiment_id: Optional[str] = None # set for ablation variants
     created_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None

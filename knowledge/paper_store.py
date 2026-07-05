@@ -85,3 +85,9 @@ def update_paper_full_text(paper_id: str, full_text: Optional[str]) -> None:
 def get_all_papers(limit: int = 1000) -> list[Paper]:
     with Session(get_engine()) as session:
         return list(session.exec(select(Paper).limit(limit)).all())
+
+
+def count_papers() -> int:
+    from sqlalchemy import func
+    with Session(get_engine()) as session:
+        return session.exec(select(func.count()).select_from(Paper)).one()

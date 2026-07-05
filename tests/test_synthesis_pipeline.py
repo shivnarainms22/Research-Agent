@@ -106,10 +106,10 @@ def test_synthesis_run_with_mock_analysis(in_memory_engine):
     with (
         patch("knowledge.paper_store.get_paper", return_value=paper),
         patch("knowledge.paper_store.get_analysis", return_value=None),
+        patch("ingestion.fulltext_fetcher.fetch_arxiv_fulltext", return_value=None),
         patch("synthesis.paper_analyzer.analyze_paper", return_value=analysis),
         patch("knowledge.paper_store.save_analysis"),
         patch("knowledge.paper_store.update_paper_status"),
-        patch("knowledge.paper_store.update_paper_full_text"),
         patch("knowledge.contradiction_detector.check_new_paper"),
         patch("knowledge.contradiction_store.get_contradictions_for_paper", return_value=[]),
         patch("knowledge.vector_store.embed_paper"),
@@ -119,3 +119,56 @@ def test_synthesis_run_with_mock_analysis(in_memory_engine):
         result = run(state)
 
     assert result == []
+
+
+def _fake_message(paper_id: str) -> MagicMock:
+    """A Claude message whose tool_use block carries a minimal analysis."""
+    block = MagicMock()
+    block.type = "tool_use"
+    block.input = {
+        "key_contributions": ["c1"],
+        "methods_described": ["m1"],
+        "reproducible_experiments": [],
+        "novelty_score": 8.0,
+        "relevance_score": 8.0,
+        "limitations": [],
+        "datasets_used": [],
+        "key_hyperparameters": {},
+        "reproducibility_difficulty": "easy",
+    }
+    message = MagicMock()
+    message.content = [block]
+    message.usage.input_tokens = 100
+    message.usage.output_tokens = 50
+    return message
+
+
+def test_analyze_papers_batch_parses_results():
+    """Batch results map back to PaperAnalysis by paper id; errored items are skipped."""
+    from synthesis.paper_analyzer import analyze_papers_batch
+
+    papers = [_make_paper("p1"), _make_paper("p2")]
+
+    ok = MagicMock()
+    ok.custom_id = "p1"
+    ok.result.type = "succeeded"
+    ok.result.message = _fake_message("p1")
+
+    errored = MagicMock()
+    errored.custom_id = "p2"
+    errored.result.type = "errored"
+
+    batch = MagicMock()
+    batch.id = "batch_1"
+    batch.processing_status = "ended"
+
+    client = MagicMock()
+    client.messages.batches.create.return_value = batch
+    client.messages.batches.results.return_value = [ok, errored]
+
+    with patch("synthesis.paper_analyzer._get_client", return_value=client):
+        analyses = analyze_papers_batch(papers)
+
+    assert set(analyses) == {"p1"}
+    assert analyses["p1"].novelty_score == 8.0
+    assert analyses["p1"].paper_id == "p1"

@@ -10,6 +10,7 @@ from pathlib import Path
 import streamlit as st
 
 from config import settings
+from knowledge.token_log_store import estimate_cost
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _LOG_FILE = settings.state_dir / "pipeline_output.log"
@@ -27,15 +28,31 @@ STAGE_DESCRIPTIONS = {
 
 @st.cache_data(ttl=8)
 def _get_experiment_counts() -> dict[str, int]:
-    from knowledge.experiment_store import get_experiments_by_status
+    from knowledge.experiment_store import count_by_status
+    counts = count_by_status()
     statuses = ["pending_review", "pending", "running", "completed", "failed", "skipped"]
-    return {s: len(get_experiments_by_status(s)) for s in statuses}
+    return {s: counts.get(s, 0) for s in statuses}
 
 
 @st.cache_data(ttl=8)
 def _get_paper_count() -> int:
-    from knowledge.paper_store import get_all_papers
-    return len(get_all_papers(limit=100_000))
+    from knowledge.paper_store import count_papers
+    return count_papers()
+
+
+@st.cache_data(ttl=8)
+def _get_total_cost() -> float:
+    total = 0.0
+    if settings.state_dir.exists():
+        for p in settings.state_dir.glob("*.json"):
+            try:
+                d = json.loads(p.read_text(encoding="utf-8"))
+                total += estimate_cost(
+                    d.get("total_input_tokens", 0), d.get("total_output_tokens", 0)
+                )
+            except Exception:
+                pass
+    return total
 
 
 @st.cache_data(ttl=8)
@@ -96,7 +113,7 @@ def _get_recent_cycles() -> list[dict]:
             data = json.loads(p.read_text(encoding="utf-8"))
             inp = data.get("total_input_tokens", 0)
             out = data.get("total_output_tokens", 0)
-            cost = inp * 3 / 1_000_000 + out * 15 / 1_000_000
+            cost = estimate_cost(inp, out)
             cycles.append({
                 "cycle_id": data.get("cycle_id", p.stem)[:20],
                 "stage": data.get("current_stage", "?"),
@@ -217,7 +234,7 @@ def _render_pipeline_status(state: dict) -> None:
     st.markdown("")
     inp = state.get("total_input_tokens", 0)
     out = state.get("total_output_tokens", 0)
-    cost = inp * 3 / 1_000_000 + out * 15 / 1_000_000
+    cost = estimate_cost(inp, out)
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Papers ingested", len(state.get("paper_ids_this_cycle", [])))
     m2.metric("Experiments run", len(state.get("experiment_ids_this_cycle", [])))
@@ -239,7 +256,7 @@ def _render_last_cycle_summary(state: dict) -> None:
     exps = len(state.get("experiment_ids_this_cycle", []))
     inp = state.get("total_input_tokens", 0)
     out = state.get("total_output_tokens", 0)
-    cost = inp * 3 / 1_000_000 + out * 15 / 1_000_000
+    cost = estimate_cost(inp, out)
 
     st.success(f"Last run complete: **{cycle_id}**")
     c1, c2, c3 = st.columns(3)
@@ -334,15 +351,7 @@ def render() -> None:
 
     counts = _get_experiment_counts()
     total_papers = _get_paper_count()
-    total_cost = 0.0
-    if settings.state_dir.exists():
-        for p in settings.state_dir.glob("*.json"):
-            try:
-                d = json.loads(p.read_text(encoding="utf-8"))
-                total_cost += d.get("total_input_tokens", 0) * 3 / 1_000_000
-                total_cost += d.get("total_output_tokens", 0) * 15 / 1_000_000
-            except Exception:
-                pass
+    total_cost = _get_total_cost()
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Papers", total_papers)

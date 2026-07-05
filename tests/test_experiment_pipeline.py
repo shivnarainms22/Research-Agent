@@ -59,7 +59,6 @@ def test_experiment_pipeline_runs_pending(in_memory_engine):
         patch("experiments.experiment_pipeline.save_result"),
         patch("experiments.experiment_pipeline.update_experiment_status") as mock_status,
         patch("experiments.experiment_pipeline.increment_retry"),
-        patch("experiments.experiment_pipeline.save_state"),
     ):
         experiment_pipeline.run(state)
 
@@ -91,7 +90,6 @@ def test_experiment_pipeline_handles_runner_failure(in_memory_engine):
         patch("experiments.experiment_pipeline.save_result"),
         patch("experiments.experiment_pipeline.update_experiment_status") as mock_status,
         patch("experiments.experiment_pipeline.increment_retry"),
-        patch("experiments.experiment_pipeline.save_state"),
     ):
         experiment_pipeline.run(state)
 

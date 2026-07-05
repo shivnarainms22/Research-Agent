@@ -5,13 +5,16 @@ import structlog
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from config import settings
-from core.models import Paper, PaperAnalysis, RunState
+from core.models import Experiment, Paper, PaperAnalysis, RunState
 from core.state import save_state
-from knowledge import paper_store, vector_store
+from knowledge import contradiction_detector, contradiction_store, paper_store, vector_store
 from knowledge.experiment_store import save_experiment
 from synthesis import paper_analyzer, experiment_extractor
 
 log = structlog.get_logger()
+
+# Below this many papers, direct API calls beat batch turnaround time.
+_MIN_PAPERS_FOR_BATCH = 3
 
 
 def _passes_keyword_filter(paper: Paper) -> bool:
@@ -23,23 +26,37 @@ def _passes_keyword_filter(paper: Paper) -> bool:
     return passes
 
 
-def _analyze_one(paper: Paper) -> tuple[str, PaperAnalysis | None, str | None]:
-    """Fetch full text + analyze a single paper. Returns (paper_id, analysis, error)."""
-    paper_id = paper.id
+def _fetch_fulltext(paper: Paper) -> None:
+    """Fetch arXiv full text into memory for the analysis call (not persisted)."""
+    if paper.source != "arxiv" or paper.full_text:
+        return
     try:
-        # Fetch full text for arXiv papers that don't have it yet
-        if paper.source == "arxiv" and not paper.full_text:
-            from ingestion.fulltext_fetcher import fetch_arxiv_fulltext
-            ft = fetch_arxiv_fulltext(paper.source_id)
-            if ft:
-                paper.full_text = ft
-                paper_store.update_paper_full_text(paper.id, ft)
-                log.info("synthesis.fulltext_fetched", paper_id=paper.id, chars=len(ft))
-
-        analysis = paper_analyzer.analyze_paper(paper)
-        return paper_id, analysis, None
+        from ingestion.fulltext_fetcher import fetch_arxiv_fulltext
+        ft = fetch_arxiv_fulltext(paper.source_id)
+        if ft:
+            paper.full_text = ft
+            log.info("synthesis.fulltext_fetched", paper_id=paper.id, chars=len(ft))
     except Exception as e:
-        return paper_id, None, str(e)
+        log.warning("synthesis.fulltext_failed", paper_id=paper.id, error=str(e))
+
+
+def _extract_one(paper: Paper, analysis: PaperAnalysis) -> list[Experiment]:
+    """Contradiction check + experiment extraction for one paper (thread-safe)."""
+    try:
+        has_direct_contradiction = False
+        try:
+            contradiction_detector.check_new_paper(paper.id, analysis)
+            contras = contradiction_store.get_contradictions_for_paper(paper.id)
+            has_direct_contradiction = any(c.severity == "direct" for c in contras)
+        except Exception as e:
+            log.warning("synthesis.contradiction_check_failed", paper_id=paper.id, error=str(e))
+
+        return experiment_extractor.extract_experiments(
+            paper.id, analysis, has_direct_contradiction=has_direct_contradiction
+        )
+    except Exception as e:
+        log.error("synthesis.phase2_failed", paper_id=paper.id, error=str(e))
+        return []
 
 
 def run(state: RunState) -> list[str]:
@@ -71,74 +88,63 @@ def run(state: RunState) -> list[str]:
         papers_to_analyze.append(paper)
 
     # -----------------------------------------------------------------
-    # Phase 1: Parallel analysis (no ChromaDB writes in workers)
+    # Phase 1: fetch full text in parallel, then analyze via the Batch
+    # API (50% cheaper); small counts use direct calls for faster turnaround.
     # -----------------------------------------------------------------
-    analysis_results: dict[str, PaperAnalysis] = {}
-
     with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(_analyze_one, paper): paper for paper in papers_to_analyze}
-        for future in as_completed(futures):
-            pid, analysis, error = future.result()
-            if error:
-                log.error("synthesis.paper_failed", paper_id=pid, error=error)
-            elif analysis is not None:
-                paper_store.save_analysis(analysis)
-                paper_store.update_paper_status(pid, "analyzed")
-                paper_store.update_paper_full_text(pid, None)  # free storage
-                log.info(
-                    "synthesis.analyzed",
-                    paper_id=pid,
-                    novelty=analysis.novelty_score,
-                    relevance=analysis.relevance_score,
-                    difficulty=analysis.reproducibility_difficulty,
-                )
-                analysis_results[pid] = analysis
+        list(executor.map(_fetch_fulltext, papers_to_analyze))
+
+    analysis_results: dict[str, PaperAnalysis] = {}
+    if len(papers_to_analyze) >= _MIN_PAPERS_FOR_BATCH:
+        analysis_results = paper_analyzer.analyze_papers_batch(papers_to_analyze)
+    else:
+        for paper in papers_to_analyze:
+            try:
+                analysis_results[paper.id] = paper_analyzer.analyze_paper(paper)
+            except Exception as e:
+                log.error("synthesis.paper_failed", paper_id=paper.id, error=str(e))
+
+    for pid, analysis in analysis_results.items():
+        paper_store.save_analysis(analysis)
+        paper_store.update_paper_status(pid, "analyzed")
+        log.info(
+            "synthesis.analyzed",
+            paper_id=pid,
+            novelty=analysis.novelty_score,
+            relevance=analysis.relevance_score,
+            difficulty=analysis.reproducibility_difficulty,
+        )
 
     # -----------------------------------------------------------------
-    # Phase 2: Sequential — embed + extract experiments (ChromaDB is not thread-safe)
+    # Phase 2a: embed relevant papers (sequential — ChromaDB writes are
+    # not thread-safe)
     # -----------------------------------------------------------------
-    experiment_ids: list[str] = []
-
+    relevant: list[tuple[Paper, PaperAnalysis]] = []
     for paper in papers_to_analyze:
-        paper_id = paper.id
-        analysis = analysis_results.get(paper_id)
+        analysis = analysis_results.get(paper.id)
         if analysis is None:
             continue
-
-        # Skip low-relevance papers before experiment generation
         if analysis.relevance_score < settings.min_relevance_score_to_experiment:
             log.info(
                 "synthesis.relevance_filter_skip",
-                paper_id=paper_id,
+                paper_id=paper.id,
                 score=analysis.relevance_score,
             )
             continue
+        vector_store.embed_paper(paper)
+        relevant.append((paper, analysis))
 
-        try:
-            # Check for contradictions; also determine if there's a direct contradiction
-            has_direct_contradiction = False
-            try:
-                from knowledge import contradiction_detector
-                from knowledge.contradiction_store import get_contradictions_for_paper
-                contradiction_detector.check_new_paper(paper_id, analysis)
-                contras = get_contradictions_for_paper(paper_id)
-                has_direct_contradiction = any(c.severity == "direct" for c in contras)
-            except Exception as e:
-                log.warning("synthesis.contradiction_check_failed", paper_id=paper_id, error=str(e))
-
-            # Embed into vector store (sequential — ChromaDB not thread-safe)
-            vector_store.embed_paper(paper)
-
-            # Extract experiments, passing contradiction flag
-            experiments = experiment_extractor.extract_experiments(
-                paper_id, analysis, has_direct_contradiction=has_direct_contradiction
-            )
-            for exp in experiments:
+    # -----------------------------------------------------------------
+    # Phase 2b: contradiction checks + experiment extraction in parallel
+    # (Claude calls — the slow part); DB writes happen in the main thread.
+    # -----------------------------------------------------------------
+    experiment_ids: list[str] = []
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(_extract_one, p, a) for p, a in relevant]
+        for future in as_completed(futures):
+            for exp in future.result():
                 save_experiment(exp)
                 experiment_ids.append(exp.id)
-
-        except Exception as e:
-            log.error("synthesis.phase2_failed", paper_id=paper_id, error=str(e))
 
     state.experiment_ids_this_cycle.extend(experiment_ids)
     save_state(state)

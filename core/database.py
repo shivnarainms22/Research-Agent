@@ -16,7 +16,7 @@ def get_engine():
     global _engine
     if _engine is None:
         ensure_dirs()
-        db_url = f"sqlite:///{settings.db_path}?check_same_thread=False"
+        db_url = f"sqlite:///{settings.db_path}"
         _engine = create_engine(
             db_url,
             echo=False,
@@ -37,6 +37,9 @@ def _migrate_db(engine) -> None:
         "ALTER TABLE paper_analysis ADD COLUMN datasets_used TEXT DEFAULT '[]'",
         "ALTER TABLE paper_analysis ADD COLUMN key_hyperparameters TEXT DEFAULT '{}'",
         "ALTER TABLE paper_analysis ADD COLUMN reproducibility_difficulty TEXT DEFAULT 'medium'",
+        # create_all skips existing tables, so add indexes for old DBs here
+        "CREATE INDEX IF NOT EXISTS ix_paper_status ON paper (status)",
+        "CREATE INDEX IF NOT EXISTS ix_experiment_status ON experiment (status)",
     ]
     with engine.connect() as conn:
         for stmt in new_columns:
