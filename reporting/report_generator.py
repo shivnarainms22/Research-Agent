@@ -48,6 +48,28 @@ def _baseline_label(status: str) -> str:
     }.get(status, "? No baseline available")
 
 
+def _build_exp_section(exp, result, title_lookup: dict) -> dict:
+    """Template dict for one experiment (parent or ablation)."""
+    metrics = json.loads(result.metrics) if result and result.metrics else {}
+    comparison = json.loads(result.baseline_comparison) if result and result.baseline_comparison else {}
+    return {
+        "id": exp.id,
+        "title": exp.title,
+        "paper_id": exp.paper_id,
+        "paper_title": title_lookup.get(exp.paper_id, exp.paper_id),
+        "status": exp.status,
+        "execution_target": exp.execution_target,
+        "runtime_seconds": result.runtime_seconds if result else 0,
+        "hypothesis": exp.hypothesis,
+        "metrics_bullets": _summarize_metrics(metrics),
+        "conclusion": result.conclusion if result and result.conclusion else "",
+        "baseline_status": comparison.get("overall", "unknown"),
+        "baseline_label": _baseline_label(comparison.get("overall", "unknown")),
+        "exit_code": result.exit_code if result else -1,
+        "parent_experiment_id": exp.parent_experiment_id,
+    }
+
+
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 _client = None
@@ -200,26 +222,7 @@ def generate(state: RunState, report_type: str = "weekly") -> ResearchReport:
     for exp in all_completed:
         if exp.id not in cycle_exp_ids:
             continue
-        result = get_result(exp.id)
-        metrics = json.loads(result.metrics) if result and result.metrics else {}
-        comparison = json.loads(result.baseline_comparison) if result and result.baseline_comparison else {}
-
-        section = {
-            "id": exp.id,
-            "title": exp.title,
-            "paper_id": exp.paper_id,
-            "paper_title": _paper_title_lookup.get(exp.paper_id, exp.paper_id),
-            "status": exp.status,
-            "execution_target": exp.execution_target,
-            "runtime_seconds": result.runtime_seconds if result else 0,
-            "hypothesis": exp.hypothesis,
-            "metrics_bullets": _summarize_metrics(metrics),
-            "conclusion": result.conclusion if result and result.conclusion else "",
-            "baseline_status": comparison.get("overall", "unknown"),
-            "baseline_label": _baseline_label(comparison.get("overall", "unknown")),
-            "exit_code": result.exit_code if result else -1,
-            "parent_experiment_id": exp.parent_experiment_id,
-        }
+        section = _build_exp_section(exp, get_result(exp.id), _paper_title_lookup)
         exp_sections.append(section)
         exp_text_parts.append(
             f"- {exp.title}: status={exp.status}, baseline={section['baseline_status']}"
@@ -231,25 +234,7 @@ def generate(state: RunState, report_type: str = "weekly") -> ResearchReport:
     for exp in all_completed:
         if exp.id not in cycle_exp_ids or exp.parent_experiment_id is None:
             continue
-        abl_result = get_result(exp.id)
-        abl_metrics = json.loads(abl_result.metrics) if abl_result and abl_result.metrics else {}
-        abl_comparison = json.loads(abl_result.baseline_comparison) if abl_result and abl_result.baseline_comparison else {}
-        abl_section = {
-            "id": exp.id,
-            "title": exp.title,
-            "paper_id": exp.paper_id,
-            "paper_title": _paper_title_lookup.get(exp.paper_id, exp.paper_id),
-            "status": exp.status,
-            "execution_target": exp.execution_target,
-            "runtime_seconds": abl_result.runtime_seconds if abl_result else 0,
-            "hypothesis": exp.hypothesis,
-            "metrics_bullets": _summarize_metrics(abl_metrics),
-            "conclusion": abl_result.conclusion if abl_result and abl_result.conclusion else "",
-            "baseline_status": abl_comparison.get("overall", "unknown"),
-            "baseline_label": _baseline_label(abl_comparison.get("overall", "unknown")),
-            "exit_code": abl_result.exit_code if abl_result else -1,
-            "parent_experiment_id": exp.parent_experiment_id,
-        }
+        abl_section = _build_exp_section(exp, get_result(exp.id), _paper_title_lookup)
         ablation_map.setdefault(exp.parent_experiment_id, []).append(abl_section)
 
     # Also fetch ablations that were created in previous cycles but linked to cycle parents
@@ -259,25 +244,7 @@ def generate(state: RunState, report_type: str = "weekly") -> ResearchReport:
             for abl_exp in db_ablations:
                 if abl_exp.id in cycle_exp_ids:
                     continue  # already captured above
-                abl_result = get_result(abl_exp.id)
-                abl_metrics = json.loads(abl_result.metrics) if abl_result and abl_result.metrics else {}
-                abl_comparison = json.loads(abl_result.baseline_comparison) if abl_result and abl_result.baseline_comparison else {}
-                abl_section = {
-                    "id": abl_exp.id,
-                    "title": abl_exp.title,
-                    "paper_id": abl_exp.paper_id,
-                    "paper_title": _paper_title_lookup.get(abl_exp.paper_id, abl_exp.paper_id),
-                    "status": abl_exp.status,
-                    "execution_target": abl_exp.execution_target,
-                    "runtime_seconds": abl_result.runtime_seconds if abl_result else 0,
-                    "hypothesis": abl_exp.hypothesis,
-                    "metrics_bullets": _summarize_metrics(abl_metrics),
-                    "conclusion": abl_result.conclusion if abl_result and abl_result.conclusion else "",
-                    "baseline_status": abl_comparison.get("overall", "unknown"),
-                    "baseline_label": _baseline_label(abl_comparison.get("overall", "unknown")),
-                    "exit_code": abl_result.exit_code if abl_result else -1,
-                    "parent_experiment_id": abl_exp.parent_experiment_id,
-                }
+                abl_section = _build_exp_section(abl_exp, get_result(abl_exp.id), _paper_title_lookup)
                 ablation_map.setdefault(abl_exp.parent_experiment_id, []).append(abl_section)
 
     experiment_families = [
@@ -304,7 +271,7 @@ def generate(state: RunState, report_type: str = "weekly") -> ResearchReport:
     themes = get_all_themes()
 
     # Count stats
-    total_papers = len(get_all_papers(limit=10000))
+    total_papers = len(_paper_title_lookup)
     total_experiments = len(all_completed)
 
     # SP1: pull reproduction rate from the eval-metric store (replaces ad-hoc per-report math).
