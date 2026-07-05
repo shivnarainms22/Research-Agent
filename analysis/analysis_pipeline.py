@@ -138,4 +138,5 @@ Be precise and honest about limitations."""
         cache_read_tokens=getattr(resp.usage, "cache_read_input_tokens", 0),
     )
     token_tracker.track("analysis_conclusion", resp.usage.input_tokens, resp.usage.output_tokens)
-    return resp.content[0].text if resp.content else ""
+    from core.claude_utils import first_text
+    return first_text(resp)

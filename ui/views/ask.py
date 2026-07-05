@@ -45,7 +45,8 @@ def answer_question(question: str) -> tuple[str, list[dict]]:
     )
     from core import token_tracker
     token_tracker.track("ask_corpus", resp.usage.input_tokens, resp.usage.output_tokens)
-    answer = resp.content[0].text if resp.content else ""
+    from core.claude_utils import first_text
+    answer = first_text(resp)
     return answer, sources
 
 
