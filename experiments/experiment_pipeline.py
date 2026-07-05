@@ -17,6 +17,7 @@ from knowledge.experiment_store import (
     save_result,
     delete_result,
 )
+from knowledge.lesson_store import save_lesson
 
 log = structlog.get_logger()
 
@@ -37,6 +38,9 @@ def _repair_before_run(exp: Experiment, reason: str) -> bool:
     update_experiment_code(exp.id, fixed_code)
     increment_retry(exp.id)
     update_experiment_status(exp.id, "pending", error=f"critic: {reason[:200]}; repaired: {diagnosis[:200]}")
+    if diagnosis:
+        save_lesson(exp.id, f"'{exp.title}': critic flagged '{reason}' — fix: {diagnosis}",
+                    category="repair", paper_id=exp.paper_id)
     log.info("experiment_pipeline.critic_requeued", exp_id=exp.id, reason=reason[:120])
     return True
 
@@ -48,6 +52,8 @@ def _repair_or_fail(exp: Experiment, failure_context: str, error: str) -> None:
     """
     if exp.retry_count + 1 >= _MAX_RETRIES:
         update_experiment_status(exp.id, "failed", error=error)
+        save_lesson(exp.id, f"'{exp.title}' failed after {_MAX_RETRIES} attempts: {error}",
+                    category="failure", paper_id=exp.paper_id)
         return
 
     try:
@@ -63,6 +69,9 @@ def _repair_or_fail(exp: Experiment, failure_context: str, error: str) -> None:
     fixed_code, diagnosis = repaired
     update_experiment_code(exp.id, fixed_code)
     update_experiment_status(exp.id, "pending", error=f"{error}; repaired: {diagnosis[:300]}")
+    if diagnosis:
+        save_lesson(exp.id, f"'{exp.title}' failed ({error}) — fix: {diagnosis}",
+                    category="repair", paper_id=exp.paper_id)
     log.info("experiment_pipeline.repaired_requeued", exp_id=exp.id, diagnosis=diagnosis[:120])
 
 

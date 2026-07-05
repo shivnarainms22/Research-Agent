@@ -133,20 +133,3 @@ def get_completed_results(limit: int = 100) -> list[ExperimentResult]:
         )
 
 
-def get_recent_failed_results(limit: int = 10) -> list[tuple]:
-    from sqlalchemy import or_
-    with Session(get_engine()) as session:
-        results = list(
-            session.exec(
-                select(ExperimentResult)
-                .where(or_(ExperimentResult.exit_code != 0, ExperimentResult.metrics == "{}"))
-                .order_by(ExperimentResult.id.desc())
-                .limit(limit)
-            ).all()
-        )
-    pairs = []
-    for r in results:
-        exp = get_experiment(r.experiment_id)
-        if exp:
-            pairs.append((exp, r))
-    return pairs

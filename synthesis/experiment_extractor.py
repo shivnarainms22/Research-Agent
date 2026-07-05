@@ -13,7 +13,8 @@ from config import settings
 from core import token_tracker
 from core.models import Experiment, Paper, PaperAnalysis
 from ingestion import repo_fetcher
-from knowledge.experiment_store import get_experiments_by_paper_id, get_recent_failed_results
+from knowledge.experiment_store import get_experiments_by_paper_id
+from knowledge.lesson_store import get_recent_lessons
 from knowledge import paper_store, retriever
 
 log = structlog.get_logger()
@@ -146,21 +147,14 @@ def extract_experiments(
     except Exception:
         pass  # related context is best-effort
 
-    # Build failure feedback context from recent failed experiments
+    # Build failure feedback from accumulated lessons (diagnoses + final failures)
     failure_context = ""
     try:
-        failed_pairs = get_recent_failed_results(limit=5)
-        if failed_pairs:
-            lines = []
-            for failed_exp, failed_result in failed_pairs:
-                exit_note = f"exit_code={failed_result.exit_code}"
-                metrics_note = "no metrics" if failed_result.metrics == "{}" else "empty metrics"
-                lines.append(
-                    f"- '{failed_exp.title}': {exit_note}, {metrics_note}"
-                )
+        lessons = get_recent_lessons(limit=6)
+        if lessons:
             failure_context = (
-                "Recent failed experiments (avoid similar mistakes):\n"
-                + "\n".join(lines)
+                "Lessons from past experiments (apply these, avoid these mistakes):\n"
+                + "\n".join(f"- {les.text}" for les in lessons)
             )
     except Exception:
         pass  # failure context is best-effort
