@@ -104,56 +104,42 @@ _ANALYSIS_TOOL = {
 }
 
 
-@retry(
-    retry=retry_if_exception_type(anthropic.RateLimitError),
-    wait=wait_exponential(multiplier=1, min=60, max=300),
-    stop=stop_after_attempt(3),
-)
-def analyze_paper(paper: Paper) -> PaperAnalysis:
-    client = _get_client()
-
+def _request_params(paper: Paper) -> dict:
+    """Messages API params for analyzing one paper (shared by direct and batch calls)."""
     content = f"# {paper.title}\n\n## Abstract\n{paper.abstract}"
     if paper.full_text:
         content += f"\n\n## Key Sections\n{paper.full_text[:10000]}"
-
-    response = client.messages.create(
-        model=settings.claude_model,
-        max_tokens=4096,
-        temperature=0.2,
-        system=[
+    return {
+        "model": settings.claude_model,
+        "max_tokens": 4096,
+        "temperature": 0.2,
+        "system": [
             {
                 "type": "text",
                 "text": _SYSTEM,
                 "cache_control": {"type": "ephemeral"},
             }
         ],
-        messages=[{"role": "user", "content": content}],
-        tools=[_ANALYSIS_TOOL],
-        tool_choice={"type": "tool", "name": "analyze_paper"},
-    )
+        "messages": [{"role": "user", "content": content}],
+        "tools": [_ANALYSIS_TOOL],
+        "tool_choice": {"type": "tool", "name": "analyze_paper"},
+    }
 
-    log.info(
-        "claude.usage",
-        module="paper_analyzer",
-        input_tokens=response.usage.input_tokens,
-        output_tokens=response.usage.output_tokens,
-        cache_read_tokens=getattr(response.usage, "cache_read_input_tokens", 0),
-    )
-    token_tracker.track("paper_analyzer", response.usage.input_tokens, response.usage.output_tokens)
 
-    # Extract tool use block
+def _to_analysis(paper_id: str, message) -> PaperAnalysis:
+    """Build a PaperAnalysis from a Claude message (raises if no tool_use block)."""
     tool_result = next(
-        (b.input for b in response.content if b.type == "tool_use"),
+        (b.input for b in message.content if b.type == "tool_use"),
         None,
     )
     if not tool_result:
         raise ValueError("No tool_use block in Claude response")
 
-    analysis_id = hashlib.sha256(f"analysis:{paper.id}".encode()).hexdigest()[:32]
+    analysis_id = hashlib.sha256(f"analysis:{paper_id}".encode()).hexdigest()[:32]
 
     return PaperAnalysis(
         id=analysis_id,
-        paper_id=paper.id,
+        paper_id=paper_id,
         key_contributions=json.dumps(tool_result.get("key_contributions", [])),
         methods_described=json.dumps(tool_result.get("methods_described", [])),
         reproducible_experiments=json.dumps(tool_result.get("reproducible_experiments", [])),
@@ -166,3 +152,66 @@ def analyze_paper(paper: Paper) -> PaperAnalysis:
         raw_claude_response="",
         analyzed_at=datetime.utcnow(),
     )
+
+
+@retry(
+    retry=retry_if_exception_type(anthropic.RateLimitError),
+    wait=wait_exponential(multiplier=1, min=60, max=300),
+    stop=stop_after_attempt(3),
+)
+def analyze_paper(paper: Paper) -> PaperAnalysis:
+    response = _get_client().messages.create(**_request_params(paper))
+
+    log.info(
+        "claude.usage",
+        module="paper_analyzer",
+        input_tokens=response.usage.input_tokens,
+        output_tokens=response.usage.output_tokens,
+        cache_read_tokens=getattr(response.usage, "cache_read_input_tokens", 0),
+    )
+    token_tracker.track("paper_analyzer", response.usage.input_tokens, response.usage.output_tokens)
+
+    return _to_analysis(paper.id, response)
+
+
+_BATCH_POLL_SECONDS = 15
+_BATCH_TIMEOUT_SECONDS = 2 * 3600
+
+
+def analyze_papers_batch(papers: list[Paper]) -> dict[str, PaperAnalysis]:
+    """Analyze papers via the Message Batches API (50% cheaper than direct calls).
+
+    Returns {paper_id: PaperAnalysis}; papers whose request errored are omitted
+    and stay in 'fetched' status for the next cycle.
+    """
+    import time
+
+    client = _get_client()
+    batch = client.messages.batches.create(
+        requests=[{"custom_id": p.id, "params": _request_params(p)} for p in papers]
+    )
+    log.info("paper_analyzer.batch_submitted", batch_id=batch.id, papers=len(papers))
+
+    deadline = time.time() + _BATCH_TIMEOUT_SECONDS
+    while batch.processing_status != "ended":
+        if time.time() > deadline:
+            raise TimeoutError(f"Batch {batch.id} not finished after {_BATCH_TIMEOUT_SECONDS}s")
+        time.sleep(_BATCH_POLL_SECONDS)
+        batch = client.messages.batches.retrieve(batch.id)
+
+    analyses: dict[str, PaperAnalysis] = {}
+    for entry in client.messages.batches.results(batch.id):
+        if entry.result.type != "succeeded":
+            log.error("paper_analyzer.batch_item_failed",
+                      paper_id=entry.custom_id, result_type=entry.result.type)
+            continue
+        message = entry.result.message
+        token_tracker.track("paper_analyzer", message.usage.input_tokens, message.usage.output_tokens)
+        try:
+            analyses[entry.custom_id] = _to_analysis(entry.custom_id, message)
+        except Exception as e:
+            log.error("paper_analyzer.batch_parse_failed", paper_id=entry.custom_id, error=str(e))
+
+    log.info("paper_analyzer.batch_done", batch_id=batch.id,
+             succeeded=len(analyses), failed=len(papers) - len(analyses))
+    return analyses
