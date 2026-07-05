@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     modal_token_id: str = ""
     modal_token_secret: str = ""
 
+    # Notifications (all optional — unconfigured = silent)
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    notify_webhook_url: str = ""
+
     # Claude models
     claude_model: str = "claude-sonnet-5"
     claude_haiku_model: str = "claude-haiku-4-5-20251001"
