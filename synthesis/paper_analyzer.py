@@ -108,7 +108,7 @@ def _request_params(paper: Paper) -> dict:
     """Messages API params for analyzing one paper (shared by direct and batch calls)."""
     content = f"# {paper.title}\n\n## Abstract\n{paper.abstract}"
     if paper.full_text:
-        content += f"\n\n## Key Sections\n{paper.full_text[:10000]}"
+        content += f"\n\n## Key Sections\n{paper.full_text[:30000]}"
     return {
         "model": settings.claude_model,
         "max_tokens": 4096,
