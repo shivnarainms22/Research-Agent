@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     modal_token_secret: str = ""
 
     # Claude models
-    claude_model: str = "claude-sonnet-4-6"
+    claude_model: str = "claude-sonnet-5"
     claude_haiku_model: str = "claude-haiku-4-5-20251001"
 
     # Paths

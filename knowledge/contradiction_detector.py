@@ -64,7 +64,7 @@ def _call_claude(new_paper_summary: str, similar_summaries: list[dict]) -> list[
     }
 
     response = client.messages.create(
-        model=settings.claude_model,
+        model=settings.claude_haiku_model,  # simple claims comparison — Haiku is 1/3 the price
         max_tokens=1024,
         temperature=0.2,
         system=[{

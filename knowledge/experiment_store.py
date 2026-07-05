@@ -30,6 +30,15 @@ def get_experiments_by_status(status: str) -> list[Experiment]:
         )
 
 
+def count_by_status() -> dict[str, int]:
+    from sqlalchemy import func
+    with Session(get_engine()) as session:
+        rows = session.exec(
+            select(Experiment.status, func.count()).group_by(Experiment.status)
+        ).all()
+    return dict(rows)
+
+
 def update_experiment_status(exp_id: str, status: str, error: str | None = None) -> None:
     from datetime import datetime
     with Session(get_engine()) as session:

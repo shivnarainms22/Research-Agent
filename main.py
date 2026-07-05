@@ -285,7 +285,8 @@ def metrics():
             stage = data.get("current_stage", "?")
             inp = data.get("total_input_tokens", 0)
             out = data.get("total_output_tokens", 0)
-            cost = inp * 3 / 1_000_000 + out * 15 / 1_000_000
+            from knowledge.token_log_store import estimate_cost
+            cost = estimate_cost(inp, out)
             console.print(f"  {cycle_id} | stage={stage} | in={inp:,} out={out:,} | est. cost=${cost:.4f}")
         except Exception:
             console.print(f"  {sf.name} (unreadable)")
@@ -710,7 +711,8 @@ def watch(
         totals = token_tracker.get_totals()
         inp = totals["input_total"]
         out = totals["output_total"]
-        cost = inp * 3 / 1_000_000 + out * 15 / 1_000_000
+        from knowledge.token_log_store import estimate_cost
+        cost = estimate_cost(inp, out)
         table.add_row("Tokens this cycle", f"in={inp:,} out={out:,}")
         table.add_row("Est. cost", f"${cost:.4f}")
         return table
