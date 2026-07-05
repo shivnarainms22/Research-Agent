@@ -133,7 +133,6 @@ Focus on: interpretability, computer vision, and vision-language-action models.
     response = client.messages.create(
         model=settings.claude_model,
         max_tokens=4096,
-        temperature=0.7,
         system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
         messages=[{
             "role": "user",

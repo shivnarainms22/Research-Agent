@@ -125,7 +125,6 @@ def validate_with_retry(code: str, paper_id: str, context: str = "") -> tuple[st
                 fix_resp = client.messages.create(
                     model=settings.claude_model,
                     max_tokens=8192,
-                    temperature=0.1,
                     messages=[{
                         "role": "user",
                         "content": f"""The following Python experiment code failed safety validation:

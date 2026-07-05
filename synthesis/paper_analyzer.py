@@ -112,7 +112,6 @@ def _request_params(paper: Paper) -> dict:
     return {
         "model": settings.claude_model,
         "max_tokens": 4096,
-        "temperature": 0.2,
         "system": [
             {
                 "type": "text",

@@ -52,7 +52,6 @@ def _name_cluster(titles_and_abstracts: str) -> dict:
     response = client.messages.create(
         model=settings.claude_model,
         max_tokens=512,
-        temperature=0.3,
         system=[{
             "type": "text",
             "text": "You are a research librarian. Given a cluster of related papers, give the cluster a short descriptive name and a 1-2 sentence description of the common research theme.",

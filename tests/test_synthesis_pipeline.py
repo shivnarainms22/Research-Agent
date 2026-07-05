@@ -140,6 +140,15 @@ def _fake_message(paper_id: str) -> MagicMock:
     return message
 
 
+def test_request_params_omits_temperature():
+    """Regression: Sonnet-5 rejects `temperature`; it must not be sent (batch or direct)."""
+    from synthesis.paper_analyzer import _request_params
+
+    params = _request_params(_make_paper("p1"))
+    assert "temperature" not in params
+    assert params["model"]  # model is still set
+
+
 def test_analyze_papers_batch_parses_results():
     """Batch results map back to PaperAnalysis by paper id; errored items are skipped."""
     from synthesis.paper_analyzer import analyze_papers_batch

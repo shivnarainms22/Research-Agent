@@ -79,7 +79,6 @@ Generate 2-3 ablation variants that:
     response = client.messages.create(
         model=settings.claude_model,
         max_tokens=2048,
-        temperature=0.2,
         messages=[{"role": "user", "content": prompt}],
         tools=[_ABLATION_TOOL],
         tool_choice={"type": "tool", "name": "generate_ablations"},

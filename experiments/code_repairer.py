@@ -66,7 +66,6 @@ Diagnose the root cause and return the corrected script."""
     response = _get_client().messages.create(
         model=settings.claude_model,
         max_tokens=16000,
-        temperature=0.2,
         system=[{"type": "text", "text": _REPAIR_SYSTEM, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": prompt}],
         tools=[_REPAIR_TOOL],
