@@ -210,18 +210,8 @@ def _run_experiment(exp) -> None:
             if result.exit_code == 0 and result.metrics != "{}":
                 try:
                     st.write("Analyzing results…")
-                    _metrics = json.loads(result.metrics)
-                    from analysis import statistical_analyzer, baseline_comparator
-                    from analysis.analysis_pipeline import _generate_conclusion
-                    if _metrics:
-                        result.statistical_summary = json.dumps(statistical_analyzer.analyze(_metrics))
-                    comparison = baseline_comparator.compare(result, exp.paper_id)
-                    result.baseline_comparison = json.dumps(comparison)
-                    if result.statistical_summary:
-                        result.conclusion = _generate_conclusion(
-                            exp.title, exp.hypothesis, _metrics, comparison
-                        )
-                    save_result(result)
+                    from analysis.analysis_pipeline import analyze_result
+                    analyze_result(exp, result)
                 except Exception as _e:
                     st.warning(f"Analysis step failed (run a full cycle to retry): {_e}")
 
