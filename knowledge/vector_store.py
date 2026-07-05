@@ -37,24 +37,6 @@ def embed_paper(paper: Paper) -> None:
         log.error("vector_store.embed_error", paper_id=paper.id, error=str(e))
 
 
-def embed_papers(papers: list[Paper]) -> None:
-    if not papers:
-        return
-    collection = get_collection()
-    ids = [p.id for p in papers]
-    docs = [f"{p.title}\n\n{p.abstract}" for p in papers]
-    metas = [{
-        "title": p.title[:500],
-        "source": p.source,
-        "published_date": str(p.published_date),
-    } for p in papers]
-    try:
-        collection.upsert(ids=ids, documents=docs, metadatas=metas)
-        log.info("vector_store.embedded", count=len(papers))
-    except Exception as e:
-        log.error("vector_store.embed_batch_error", error=str(e))
-
-
 def query_similar(text: str, n_results: int = 10) -> list[dict]:
     """Return list of {id, title, distance} dicts."""
     collection = get_collection()

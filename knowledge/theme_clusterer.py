@@ -91,7 +91,6 @@ def cluster_themes() -> list[ThemeCluster]:
     embeddings = data.get("embeddings")
     if embeddings is None:
         embeddings = []
-    metadatas = data.get("metadatas") or []
     ids = data.get("ids") or []
 
     if len(embeddings) < 5:

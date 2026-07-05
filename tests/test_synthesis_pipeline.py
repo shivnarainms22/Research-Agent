@@ -5,8 +5,6 @@ import json
 from datetime import date, datetime
 from unittest.mock import MagicMock, patch
 
-import pytest
-from sqlmodel import Session
 
 from core.models import Paper, PaperAnalysis, RunState
 
@@ -58,7 +56,6 @@ def test_synthesis_run_empty_paper_ids(in_memory_engine):
 def test_synthesis_run_keyword_filter_skips_irrelevant(in_memory_engine):
     """Papers that don't match domain keywords should be skipped before analysis."""
     from synthesis.synthesis_pipeline import run
-    from core.state import save_state
 
     state = RunState(
         cycle_id="test_cycle_2",

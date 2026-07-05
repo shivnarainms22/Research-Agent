@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import date, datetime, timedelta
-from typing import Iterator
+from datetime import datetime, timedelta
 
 import arxiv
 import structlog

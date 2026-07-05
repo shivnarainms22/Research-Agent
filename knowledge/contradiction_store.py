@@ -25,11 +25,6 @@ def get_recent_contradictions(days: int = 30) -> list[Contradiction]:
         )
 
 
-def get_all_contradictions() -> list[Contradiction]:
-    with Session(get_engine()) as session:
-        return list(session.exec(select(Contradiction)).all())
-
-
 def get_contradictions_for_paper(paper_id: str) -> list[Contradiction]:
     with Session(get_engine()) as session:
         return list(

@@ -15,7 +15,6 @@ Run once against the live DB:  uv run python -m core.repair
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 import structlog
 from sqlalchemy import text

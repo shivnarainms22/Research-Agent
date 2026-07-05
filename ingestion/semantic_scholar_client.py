@@ -64,7 +64,6 @@ def fetch_papers(days_back: int = 1, max_results: int | None = None) -> list[Pap
                 except ValueError:
                     pub_date = datetime.utcnow().date()
 
-                doi = item.get("externalIds", {}).get("DOI", "")
                 url = item.get("url") or f"https://www.semanticscholar.org/paper/{s2_id}"
 
                 paper = Paper(

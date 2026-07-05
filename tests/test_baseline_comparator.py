@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
 
 from core.models import ExperimentResult, PaperAnalysis
 from analysis.baseline_comparator import compare

@@ -1,7 +1,6 @@
 """Paper Browser page — search and drill-down into paper analyses."""
 from __future__ import annotations
 
-import json
 
 import streamlit as st
 

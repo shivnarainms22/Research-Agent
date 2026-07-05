@@ -81,11 +81,11 @@ def from_url(url: str) -> Paper:
     """Fetch a paper from a URL. Handles arXiv specially; falls back to generic HTML scrape."""
     m = _ARXIV_RE.search(url)
     if m:
-        return _from_arxiv(m.group(1), url)
+        return _from_arxiv(m.group(1))
     return _from_generic_url(url)
 
 
-def _from_arxiv(arxiv_id: str, original_url: str) -> Paper:
+def _from_arxiv(arxiv_id: str) -> Paper:
     import arxiv
     from ingestion.fulltext_fetcher import fetch_arxiv_fulltext
 

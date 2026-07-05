@@ -19,14 +19,6 @@ def _graph_path() -> Path:
     return settings.data_dir / "knowledge_graph.json"
 
 
-def load_graph() -> nx.DiGraph:
-    path = _graph_path()
-    if path.exists():
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return nx.node_link_graph(data)
-    return nx.DiGraph()
-
-
 def save_graph(G: nx.DiGraph) -> None:
     data = nx.node_link_data(G)
     _graph_path().write_text(json.dumps(data, indent=2), encoding="utf-8")

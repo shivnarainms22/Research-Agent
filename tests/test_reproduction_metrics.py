@@ -221,8 +221,7 @@ def test_gather_verdicts_tolerates_missing_analysis(in_memory_engine):
     assert rows[0].source == "arxiv"
 
 
-def test_gather_verdicts_warns_on_malformed_baseline(in_memory_engine, caplog):
-    import json
+def test_gather_verdicts_warns_on_malformed_baseline(in_memory_engine):
     from datetime import date, datetime
     from sqlmodel import Session
     from core.models import Paper, Experiment, ExperimentResult
@@ -438,7 +437,7 @@ def test_analysis_pipeline_records_snapshot(in_memory_engine, monkeypatch):
     assert latest.cycle_id == "cycle_ap"
 
 
-def test_analysis_pipeline_swallows_snapshot_failure(in_memory_engine, monkeypatch, caplog):
+def test_analysis_pipeline_swallows_snapshot_failure(in_memory_engine, monkeypatch):
     """A failure inside record_cycle_snapshot must not abort analysis_pipeline.run."""
     from analysis import analysis_pipeline
 

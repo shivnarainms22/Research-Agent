@@ -1,9 +1,7 @@
 """Tests for analysis/statistical_analyzer.py"""
 from __future__ import annotations
 
-import pytest
-from analysis.statistical_analyzer import analyze, compare_groups, _describe
-import numpy as np
+from analysis.statistical_analyzer import analyze, compare_groups
 
 
 def test_analyze_single_float():

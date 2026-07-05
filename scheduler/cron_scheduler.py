@@ -33,7 +33,7 @@ def _experiment_poll_job():
 def _weekly_report_job():
     log.info("scheduler.weekly_report_start")
     try:
-        from core.state import find_incomplete_states, new_state, mark_complete
+        from core.state import find_incomplete_states, new_state
         from datetime import datetime
         from reporting import report_generator
 
