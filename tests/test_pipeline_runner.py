@@ -9,12 +9,8 @@ from __future__ import annotations
 from unittest.mock import patch
 
 
-def test_experiment_poll_writes_no_state_file(tmp_path, monkeypatch):
-    from config import settings
-
-    monkeypatch.setattr(settings, "data_dir", tmp_path)
-    (tmp_path / "state").mkdir(parents=True)
-
+def test_experiment_poll_writes_no_state_file(tmp_path):
+    # data_dir is redirected to tmp_path by the autouse _isolate_data_dir fixture.
     with patch(
         "experiments.experiment_pipeline.get_experiments_by_status", return_value=[]
     ):
