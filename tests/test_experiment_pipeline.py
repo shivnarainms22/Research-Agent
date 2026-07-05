@@ -82,6 +82,7 @@ def test_failed_run_repairs_and_requeues():
         patch("experiments.experiment_pipeline.get_experiments_by_status", return_value=[exp]),
         patch("experiments.experiment_pipeline.code_validator.validate_with_retry", return_value=(exp.generated_code, True)),
         patch("experiments.experiment_pipeline.router.decide_target", return_value="local"),
+        patch("experiments.experiment_pipeline.experiment_critic.review", return_value=("sound", "")),
         patch("experiments.experiment_pipeline.local_runner.run", return_value=failed_result),
         patch("experiments.experiment_pipeline.get_result", return_value=None),
         patch("experiments.experiment_pipeline.delete_result"),
@@ -117,6 +118,7 @@ def test_failed_run_repair_unavailable_marks_failed():
         patch("experiments.experiment_pipeline.get_experiments_by_status", return_value=[exp]),
         patch("experiments.experiment_pipeline.code_validator.validate_with_retry", return_value=(exp.generated_code, True)),
         patch("experiments.experiment_pipeline.router.decide_target", return_value="local"),
+        patch("experiments.experiment_pipeline.experiment_critic.review", return_value=("sound", "")),
         patch("experiments.experiment_pipeline.local_runner.run", return_value=failed_result),
         patch("experiments.experiment_pipeline.get_result", return_value=None),
         patch("experiments.experiment_pipeline.delete_result"),
@@ -174,6 +176,7 @@ def test_successful_run_clears_stdout(in_memory_engine):
         patch("experiments.experiment_pipeline.get_experiments_by_status", return_value=[exp]),
         patch("experiments.experiment_pipeline.code_validator.validate_with_retry", return_value=(exp.generated_code, True)),
         patch("experiments.experiment_pipeline.router.decide_target", return_value="local"),
+        patch("experiments.experiment_pipeline.experiment_critic.review", return_value=("sound", "")),
         patch("experiments.experiment_pipeline.local_runner.run", return_value=result),
         patch("experiments.experiment_pipeline.get_result", return_value=None),
         patch("experiments.experiment_pipeline.delete_result"),
@@ -184,5 +187,57 @@ def test_successful_run_clears_stdout(in_memory_engine):
         experiment_pipeline.run(state)
 
     assert mock_save.call_args[0][0].stdout == ""
+    statuses = [c.args[1] for c in mock_status.call_args_list]
+    assert statuses[-1] == "completed"
+
+
+def test_critic_flagged_experiment_repaired_before_run():
+    """A flawed critic verdict repairs + requeues without running the experiment."""
+    from experiments import experiment_pipeline
+
+    exp = _make_experiment("exp_006")
+    state = RunState(cycle_id="t", started_at=datetime.utcnow())
+    with (
+        patch("experiments.experiment_pipeline.get_experiments_by_status", return_value=[exp]),
+        patch("experiments.experiment_pipeline.code_validator.validate_with_retry", return_value=(exp.generated_code, True)),
+        patch("experiments.experiment_pipeline.experiment_critic.review", return_value=("flawed", "uses wrong dataset")),
+        patch("experiments.experiment_pipeline.code_repairer.repair", return_value=("fixed", "switched dataset")),
+        patch("experiments.experiment_pipeline.update_experiment_code") as mock_code,
+        patch("experiments.experiment_pipeline.update_experiment_status") as mock_status,
+        patch("experiments.experiment_pipeline.increment_retry") as mock_retry,
+        patch("experiments.experiment_pipeline.local_runner.run") as mock_run,
+    ):
+        experiment_pipeline.run(state)
+
+    mock_code.assert_called_once_with("exp_006", "fixed")
+    mock_retry.assert_called_once()
+    mock_run.assert_not_called()  # requeued, not executed this pass
+    statuses = [c.args[1] for c in mock_status.call_args_list]
+    assert statuses[-1] == "pending"
+
+
+def test_critic_flawed_but_no_repair_runs_anyway():
+    """If repair is unavailable, a flawed experiment still runs (critic is advisory)."""
+    from experiments import experiment_pipeline
+
+    exp = _make_experiment("exp_007")
+    result = _make_result("exp_007", exit_code=0)
+    state = RunState(cycle_id="t", started_at=datetime.utcnow())
+    with (
+        patch("experiments.experiment_pipeline.get_experiments_by_status", return_value=[exp]),
+        patch("experiments.experiment_pipeline.code_validator.validate_with_retry", return_value=(exp.generated_code, True)),
+        patch("experiments.experiment_pipeline.experiment_critic.review", return_value=("flawed", "unsure")),
+        patch("experiments.experiment_pipeline.code_repairer.repair", return_value=None),
+        patch("experiments.experiment_pipeline.router.decide_target", return_value="local"),
+        patch("experiments.experiment_pipeline.local_runner.run", return_value=result) as mock_run,
+        patch("experiments.experiment_pipeline.get_result", return_value=None),
+        patch("experiments.experiment_pipeline.delete_result"),
+        patch("experiments.experiment_pipeline.save_result"),
+        patch("experiments.experiment_pipeline.update_experiment_status") as mock_status,
+        patch("experiments.experiment_pipeline.increment_retry"),
+    ):
+        experiment_pipeline.run(state)
+
+    mock_run.assert_called_once()
     statuses = [c.args[1] for c in mock_status.call_args_list]
     assert statuses[-1] == "completed"

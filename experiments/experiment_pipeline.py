@@ -4,7 +4,9 @@ from __future__ import annotations
 import structlog
 
 from core.models import Experiment, RunState
-from experiments import code_repairer, code_validator, local_runner, cloud_runner, router
+from experiments import (
+    code_repairer, code_validator, experiment_critic, local_runner, cloud_runner, router,
+)
 from experiments.result_collector import parse_metrics_from_stdout
 from knowledge.experiment_store import (
     get_experiments_by_status,
@@ -20,6 +22,23 @@ log = structlog.get_logger()
 
 _MAX_RETRIES = 3
 _STDOUT_TAIL_CHARS = 5000
+
+
+def _repair_before_run(exp: Experiment, reason: str) -> bool:
+    """Repair a critic-flagged experiment and requeue it. Returns True if requeued."""
+    try:
+        repaired = code_repairer.repair(exp, f"Pre-run critic flagged this script: {reason}")
+    except Exception as e:
+        log.error("experiment_pipeline.critic_repair_error", exp_id=exp.id, error=str(e))
+        return False
+    if repaired is None:
+        return False
+    fixed_code, diagnosis = repaired
+    update_experiment_code(exp.id, fixed_code)
+    increment_retry(exp.id)
+    update_experiment_status(exp.id, "pending", error=f"critic: {reason[:200]}; repaired: {diagnosis[:200]}")
+    log.info("experiment_pipeline.critic_requeued", exp_id=exp.id, reason=reason[:120])
+    return True
 
 
 def _repair_or_fail(exp: Experiment, failure_context: str, error: str) -> None:
@@ -67,6 +86,14 @@ def run(state: RunState) -> None:
             continue
 
         exp.generated_code = validated_code
+
+        # Pre-run critic: if the script won't faithfully test the claim, repair it
+        # before spending compute. Advisory — runs anyway if repair is unavailable
+        # or the retry budget is exhausted.
+        if exp.retry_count < _MAX_RETRIES - 1:
+            verdict, reason = experiment_critic.review(exp)
+            if verdict == "flawed" and _repair_before_run(exp, reason):
+                continue
 
         # Determine execution target
         target = router.decide_target(exp)
