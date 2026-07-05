@@ -41,6 +41,9 @@ Requirements:
 - Treat the paper's claimed baseline metric as the target: log whether you meet, exceed, or fall short
 - Be fully self-contained (all imports at top, no external files needed)
 - Write all results to /workspace/results/metrics.json as a JSON dict
+- The metrics dict MUST include a top-level boolean "claim_verified" — True if your measured
+  result reproduces the paper's claimed value (within ~5%), False otherwise — plus
+  "paper_claimed_value" and "measured_value" (numbers) for the primary metric
 - Be executable in under 1 hour on the specified compute tier
 - Use only standard ML libraries (torch, transformers, sklearn, numpy, scipy, pandas)
 - Log progress at each major step with timing information

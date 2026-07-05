@@ -97,3 +97,58 @@ def test_string_baseline_legacy_format():
     with patch("analysis.baseline_comparator.get_analysis", return_value=analysis):
         out = compare(result, "paper_test")
     assert out["comparisons"][0]["status"] == "reproduced"
+
+
+def test_self_reported_claim_verified_true():
+    """A top-level claim_verified boolean short-circuits to a verdict."""
+    analysis = _make_analysis([{
+        "title": "T", "description": "...", "expected_metric": "x",
+        "baseline_claimed": {"metric_name": "x", "value": 1.0},
+    }])
+    result = _make_result({"pct_invisible_to_svd": 100.0, "claim_verified": True})
+    with patch("analysis.baseline_comparator.get_analysis", return_value=analysis):
+        out = compare(result, "paper_test")
+    assert out["overall"] == "fully_reproduced"
+    assert out["source"] == "self_report"
+
+
+def test_self_reported_claim_verified_false():
+    analysis = _make_analysis([{
+        "title": "T", "description": "...", "expected_metric": "x",
+        "baseline_claimed": {"metric_name": "x", "value": 1.0},
+    }])
+    result = _make_result({"claim_verified": False})
+    with patch("analysis.baseline_comparator.get_analysis", return_value=analysis):
+        out = compare(result, "paper_test")
+    assert out["overall"] == "not_reproduced"
+
+
+def test_token_overlap_matches_snake_case_key():
+    """Prose metric name aligns to a snake_case key via shared tokens (the core bug)."""
+    analysis = _make_analysis([{
+        "title": "Counterfactual Prompting",
+        "expected_metric": "Success rate under wrong prompts",
+        "baseline_claimed": {"metric_name": "wrong prompt success", "value": 10.0},
+    }])
+    result = _make_result({"wrong_prompt_success": 10.2})
+    with patch("analysis.baseline_comparator.get_analysis", return_value=analysis):
+        out = compare(result, "paper_test")
+    assert out["comparisons"][0]["actual"] == 10.2
+    assert out["comparisons"][0]["status"] == "reproduced"
+
+
+def test_scoping_to_experiment_title():
+    """Only the spec matching the running experiment is compared, not its siblings."""
+    analysis = _make_analysis([
+        {"title": "SAE vs SVD Comparison", "expected_metric": "pct invisible to svd",
+         "baseline_claimed": {"metric_name": "pct invisible to svd", "value": 99.8}},
+        {"title": "CRISPRi Perturbation Benchmarking", "expected_metric": "TF response rate",
+         "baseline_claimed": {"metric_name": "TF response", "value": 50.0}},
+    ])
+    result = _make_result({"pct_invisible_to_svd": 100.0})
+    with patch("analysis.baseline_comparator.get_analysis", return_value=analysis):
+        out = compare(result, "paper_test", experiment_title="SAE vs SVD Comparison")
+    # Only the SAE spec is scored; the unrelated CRISPRi spec is not dragged in
+    assert len(out["comparisons"]) == 1
+    assert out["comparisons"][0]["experiment"] == "SAE vs SVD Comparison"
+    assert out["overall"] == "fully_reproduced"
