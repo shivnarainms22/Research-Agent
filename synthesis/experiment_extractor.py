@@ -190,7 +190,6 @@ public equivalent and log the substitution. Log whether your result meets the cl
             response = client.messages.create(
                 model=settings.claude_model,
                 max_tokens=16000,
-                temperature=0.2,
                 system=[{"type": "text", "text": _CODE_GEN_SYSTEM, "cache_control": {"type": "ephemeral"}}],
                 messages=[{"role": "user", "content": prompt}],
                 tools=[_EXPERIMENT_CODE_TOOL],

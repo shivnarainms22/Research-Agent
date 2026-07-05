@@ -91,7 +91,6 @@ def _call_claude(corpus_summary: str) -> list[dict]:
     response = client.messages.create(
         model=settings.claude_model,
         max_tokens=2048,
-        temperature=0.3,
         system=[{
             "type": "text",
             "text": "You are a research strategist. Based on a corpus of recent papers, identify important open questions and research gaps — things the community has not yet studied, tested, or resolved. Write gaps as plain-English questions or statements.",

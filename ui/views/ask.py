@@ -35,7 +35,6 @@ def answer_question(question: str) -> tuple[str, list[dict]]:
     resp = client.messages.create(
         model=settings.claude_model,
         max_tokens=1024,
-        temperature=0.3,
         system=[{
             "type": "text",
             "text": ("You answer questions using only the provided paper summaries. "

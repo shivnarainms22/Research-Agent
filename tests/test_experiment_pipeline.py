@@ -51,6 +51,7 @@ def test_experiment_pipeline_runs_pending(in_memory_engine):
     with (
         patch("experiments.experiment_pipeline.get_experiments_by_status", return_value=[exp]),
         patch("experiments.experiment_pipeline.code_validator.validate_with_retry", return_value=(exp.generated_code, True)),
+        patch("experiments.experiment_pipeline.experiment_critic.review", return_value=("sound", "")),
         patch("experiments.experiment_pipeline.router.decide_target", return_value="local"),
         patch("experiments.experiment_pipeline.local_runner.run", return_value=result),
         patch("experiments.experiment_pipeline.get_result", return_value=None),
