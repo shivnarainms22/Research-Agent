@@ -68,18 +68,81 @@ def test_experiment_pipeline_runs_pending(in_memory_engine):
     assert any("completed" in c for c in calls)
 
 
-def test_experiment_pipeline_handles_runner_failure(in_memory_engine):
-    """When the runner returns a non-zero exit code, experiment should be marked failed."""
+def test_failed_run_repairs_and_requeues():
+    """A failed run with retries left gets repaired code and goes back to pending."""
     from experiments import experiment_pipeline
 
     exp = _make_experiment("exp_002")
-    failed_result = _make_result("exp_002", exit_code=1, metrics={})
+    failed_result = _make_result("exp_002", exit_code=1)
     failed_result.metrics = "{}"
-    state = RunState(
-        cycle_id="test_cycle_fail",
-        started_at=datetime.utcnow(),
-    )
+    failed_result.stdout = "Traceback: ImportError: no module named foo"
 
+    state = RunState(cycle_id="t", started_at=datetime.utcnow())
+    with (
+        patch("experiments.experiment_pipeline.get_experiments_by_status", return_value=[exp]),
+        patch("experiments.experiment_pipeline.code_validator.validate_with_retry", return_value=(exp.generated_code, True)),
+        patch("experiments.experiment_pipeline.router.decide_target", return_value="local"),
+        patch("experiments.experiment_pipeline.local_runner.run", return_value=failed_result),
+        patch("experiments.experiment_pipeline.get_result", return_value=None),
+        patch("experiments.experiment_pipeline.delete_result"),
+        patch("experiments.experiment_pipeline.save_result") as mock_save,
+        patch("experiments.experiment_pipeline.update_experiment_status") as mock_status,
+        patch("experiments.experiment_pipeline.update_experiment_code") as mock_code,
+        patch("experiments.experiment_pipeline.increment_retry"),
+        patch("experiments.experiment_pipeline.code_repairer.repair",
+              return_value=("fixed code", "missing import")) as mock_repair,
+    ):
+        experiment_pipeline.run(state)
+
+    # stdout tail preserved on the saved failed result (repair signal not destroyed)
+    saved = mock_save.call_args[0][0]
+    assert "ImportError" in saved.stdout
+
+    mock_repair.assert_called_once()
+    mock_code.assert_called_once_with("exp_002", "fixed code")
+    statuses = [c.args[1] for c in mock_status.call_args_list]
+    assert statuses[-1] == "pending"
+
+
+def test_failed_run_repair_unavailable_marks_failed():
+    """If no repair can be generated, the experiment is marked failed."""
+    from experiments import experiment_pipeline
+
+    exp = _make_experiment("exp_003")
+    failed_result = _make_result("exp_003", exit_code=1)
+    failed_result.metrics = "{}"
+
+    state = RunState(cycle_id="t", started_at=datetime.utcnow())
+    with (
+        patch("experiments.experiment_pipeline.get_experiments_by_status", return_value=[exp]),
+        patch("experiments.experiment_pipeline.code_validator.validate_with_retry", return_value=(exp.generated_code, True)),
+        patch("experiments.experiment_pipeline.router.decide_target", return_value="local"),
+        patch("experiments.experiment_pipeline.local_runner.run", return_value=failed_result),
+        patch("experiments.experiment_pipeline.get_result", return_value=None),
+        patch("experiments.experiment_pipeline.delete_result"),
+        patch("experiments.experiment_pipeline.save_result"),
+        patch("experiments.experiment_pipeline.update_experiment_status") as mock_status,
+        patch("experiments.experiment_pipeline.update_experiment_code") as mock_code,
+        patch("experiments.experiment_pipeline.increment_retry"),
+        patch("experiments.experiment_pipeline.code_repairer.repair", return_value=None),
+    ):
+        experiment_pipeline.run(state)
+
+    statuses = [c.args[1] for c in mock_status.call_args_list]
+    assert statuses[-1] == "failed"
+    mock_code.assert_not_called()
+
+
+def test_failed_run_at_retry_cap_skips_repair():
+    """At the retry cap, no repair is attempted — experiment is marked failed."""
+    from experiments import experiment_pipeline
+
+    exp = _make_experiment("exp_004")
+    exp.retry_count = 2  # this failure is the 3rd run
+    failed_result = _make_result("exp_004", exit_code=1)
+    failed_result.metrics = "{}"
+
+    state = RunState(cycle_id="t", started_at=datetime.utcnow())
     with (
         patch("experiments.experiment_pipeline.get_experiments_by_status", return_value=[exp]),
         patch("experiments.experiment_pipeline.code_validator.validate_with_retry", return_value=(exp.generated_code, True)),
@@ -90,8 +153,36 @@ def test_experiment_pipeline_handles_runner_failure(in_memory_engine):
         patch("experiments.experiment_pipeline.save_result"),
         patch("experiments.experiment_pipeline.update_experiment_status") as mock_status,
         patch("experiments.experiment_pipeline.increment_retry"),
+        patch("experiments.experiment_pipeline.code_repairer.repair") as mock_repair,
     ):
         experiment_pipeline.run(state)
 
-    calls = [str(c) for c in mock_status.call_args_list]
-    assert any("failed" in c for c in calls)
+    mock_repair.assert_not_called()
+    statuses = [c.args[1] for c in mock_status.call_args_list]
+    assert statuses[-1] == "failed"
+
+
+def test_successful_run_clears_stdout(in_memory_engine):
+    """On success, stdout is cleared to save storage."""
+    from experiments import experiment_pipeline
+
+    exp = _make_experiment("exp_005")
+    result = _make_result("exp_005", exit_code=0)  # has metrics
+
+    state = RunState(cycle_id="t", started_at=datetime.utcnow())
+    with (
+        patch("experiments.experiment_pipeline.get_experiments_by_status", return_value=[exp]),
+        patch("experiments.experiment_pipeline.code_validator.validate_with_retry", return_value=(exp.generated_code, True)),
+        patch("experiments.experiment_pipeline.router.decide_target", return_value="local"),
+        patch("experiments.experiment_pipeline.local_runner.run", return_value=result),
+        patch("experiments.experiment_pipeline.get_result", return_value=None),
+        patch("experiments.experiment_pipeline.delete_result"),
+        patch("experiments.experiment_pipeline.save_result") as mock_save,
+        patch("experiments.experiment_pipeline.update_experiment_status") as mock_status,
+        patch("experiments.experiment_pipeline.increment_retry"),
+    ):
+        experiment_pipeline.run(state)
+
+    assert mock_save.call_args[0][0].stdout == ""
+    statuses = [c.args[1] for c in mock_status.call_args_list]
+    assert statuses[-1] == "completed"

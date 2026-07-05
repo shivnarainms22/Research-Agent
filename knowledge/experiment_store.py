@@ -106,6 +106,15 @@ def get_ablations_for_parent(parent_id: str) -> list[Experiment]:
         )
 
 
+def update_experiment_code(exp_id: str, code: str) -> None:
+    with Session(get_engine()) as session:
+        exp = session.get(Experiment, exp_id)
+        if exp:
+            exp.generated_code = code
+            session.add(exp)
+            session.commit()
+
+
 def update_experiment_hypothesis(exp_id: str, new_hypothesis: str) -> None:
     with Session(get_engine()) as session:
         exp = session.get(Experiment, exp_id)
