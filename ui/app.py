@@ -256,6 +256,7 @@ PAGE_LABELS = [
     "◫  Papers",
     "⚗  Experiments",
     "◉  Living Review",
+    "?  Ask",
     "≡  Reports",
     "⚙  Settings",
 ]
@@ -307,6 +308,9 @@ elif page == "Experiments":
     render()
 elif page == "Living Review":
     from ui.views.living_review import render
+    render()
+elif page == "Ask":
+    from ui.views.ask import render
     render()
 elif page == "Reports":
     from ui.views.reports import render
