@@ -1,7 +1,12 @@
 """Add Paper page — ingest a paper from PDF, text file, or URL."""
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import streamlit as st
+
+if TYPE_CHECKING:
+    from core.models import Paper
 
 
 def render() -> None:

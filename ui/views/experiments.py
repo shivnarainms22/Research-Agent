@@ -6,7 +6,7 @@ import json
 import streamlit as st
 import pandas as pd
 
-from core.models import parse_json_list, parse_json_dict
+from core.models import parse_json_dict
 from knowledge.experiment_store import get_all_experiments, get_result
 from knowledge.paper_store import get_paper
 
@@ -174,7 +174,6 @@ def _run_experiment(exp) -> None:
         update_experiment_status, save_result, get_result, delete_result,
     )
     from experiments.result_collector import parse_metrics_from_stdout
-    import json
 
     with st.status(f"Running: {exp.title[:60]}…", expanded=True) as status_box:
         # Validate

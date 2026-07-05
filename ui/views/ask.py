@@ -1,7 +1,6 @@
 """Ask-the-corpus page — natural-language Q&A over analyzed papers."""
 from __future__ import annotations
 
-import json
 
 import streamlit as st
 

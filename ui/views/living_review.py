@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import streamlit as st
 
-from config import settings
 from core.models import parse_json_list
 from knowledge.theme_store import get_all_themes
 from knowledge.gap_store import get_gaps

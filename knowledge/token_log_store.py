@@ -32,26 +32,6 @@ def save_log(cycle_id: str, module: str, input_tokens: int, output_tokens: int) 
         session.commit()
 
 
-def get_logs_for_cycle(cycle_id: str) -> list[TokenUsageLog]:
-    with Session(get_engine()) as session:
-        return list(
-            session.exec(
-                select(TokenUsageLog).where(TokenUsageLog.cycle_id == cycle_id)
-            ).all()
-        )
-
-
-def get_all_logs(limit: int = 500) -> list[TokenUsageLog]:
-    with Session(get_engine()) as session:
-        return list(
-            session.exec(
-                select(TokenUsageLog)
-                .order_by(TokenUsageLog.recorded_at.desc())
-                .limit(limit)
-            ).all()
-        )
-
-
 def get_module_totals() -> dict:
     with Session(get_engine()) as session:
         rows = list(session.exec(select(TokenUsageLog)).all())

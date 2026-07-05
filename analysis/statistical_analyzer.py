@@ -1,8 +1,6 @@
 """Statistical analysis of experiment results using scipy + pingouin."""
 from __future__ import annotations
 
-import json
-from typing import Optional
 
 import numpy as np
 import structlog

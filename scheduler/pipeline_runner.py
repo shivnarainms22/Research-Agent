@@ -1,7 +1,6 @@
 """Full-cycle pipeline orchestrator with crash recovery."""
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
 
 import structlog

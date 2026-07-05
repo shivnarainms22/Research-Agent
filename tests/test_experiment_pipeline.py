@@ -3,9 +3,8 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from core.models import Experiment, ExperimentResult, RunState
 

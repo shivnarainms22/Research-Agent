@@ -22,10 +22,6 @@ def _state_path(cycle_id: str) -> Path:
     return settings.state_dir / f"{cycle_id}.json"
 
 
-def _lock_path(cycle_id: str) -> Path:
-    return settings.state_dir / f"{cycle_id}.lock"
-
-
 def save_state(state: RunState) -> None:
     """Atomically write state to JSON (os.replace for crash safety)."""
     path = _state_path(state.cycle_id)
@@ -33,14 +29,6 @@ def save_state(state: RunState) -> None:
     tmp_path.write_text(state.model_dump_json(indent=2), encoding="utf-8")
     os.replace(tmp_path, path)
     log.debug("state.saved", cycle_id=state.cycle_id, stage=state.current_stage)
-
-
-def load_state(cycle_id: str) -> Optional[RunState]:
-    path = _state_path(cycle_id)
-    if not path.exists():
-        return None
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return RunState(**data)
 
 
 def find_incomplete_states() -> list[RunState]:

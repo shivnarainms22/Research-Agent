@@ -133,7 +133,7 @@ def status():
     from knowledge.paper_store import get_all_papers
 
     papers = get_all_papers(limit=10000)
-    console.print(f"\n[bold]System Status[/bold]")
+    console.print("\n[bold]System Status[/bold]")
     console.print(f"  Total papers in DB: {len(papers)}")
 
     for status_name in ["pending_review", "pending", "running", "completed", "failed", "skipped"]:
@@ -153,7 +153,7 @@ def status():
     if reports_dir.exists():
         reports = sorted(reports_dir.glob("*.md"), reverse=True)[:5]
         if reports:
-            console.print(f"\n[bold]Recent Reports:[/bold]")
+            console.print("\n[bold]Recent Reports:[/bold]")
             for r in reports:
                 console.print(f"  {r.name}")
 
@@ -443,8 +443,6 @@ def review(
                 break
             else:
                 console.print("  Please enter A, R, E, or S.")
-        else:
-            continue
         if choice == "S":
             break
 
@@ -508,7 +506,6 @@ def experiment_run(
     try:
         import concurrent.futures, time as _time
         from rich.live import Live
-        from rich.spinner import Spinner
         from rich.text import Text
 
         runner_fn = local_runner.run if target == "local" else cloud_runner.run
@@ -559,11 +556,7 @@ def experiment_run_pending():
     console.print(f"[bold blue]Running {len(pending)} pending experiment(s)...[/bold blue]")
     state = new_state(f"manual_exp_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}")
     run_experiments(state)
-
-    from knowledge.experiment_store import get_experiments_by_status as get_by_status
-    completed = len(get_by_status("completed"))
-    failed = len(get_by_status("failed"))
-    console.print(f"[green]Done.[/green] Check results with [cyan]uv run python main.py status[/cyan]")
+    console.print("[green]Done.[/green] Check results with [cyan]uv run python main.py status[/cyan]")
 
 
 @app.command()
@@ -603,7 +596,7 @@ def papers(
         table.add_row(p.id, p.title[:60], p.source, p.status, pub)
 
     console.print(table)
-    console.print(f"\nUse [cyan]uv run python main.py synthesize --id <ID>[/cyan] to run synthesis on a specific paper.")
+    console.print("\nUse [cyan]uv run python main.py synthesize --id <ID>[/cyan] to run synthesis on a specific paper.")
 
 
 @app.command()
@@ -685,7 +678,7 @@ def synthesize(
         for exp in experiments:
             save_experiment(exp)
         console.print(f"  [green]✓[/green] {len(experiments)} experiment(s) created → [bold]pending_review[/bold]")
-        console.print(f"\nRun [cyan]uv run python main.py review[/cyan] to approve and queue them for execution.")
+        console.print("\nRun [cyan]uv run python main.py review[/cyan] to approve and queue them for execution.")
 
 
 @app.command()
