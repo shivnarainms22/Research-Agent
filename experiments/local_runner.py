@@ -53,7 +53,10 @@ def run(exp: Experiment) -> ExperimentResult:
             result = container.wait(timeout=settings.experiment_timeout_seconds)
             exit_code = result.get("StatusCode", 1)
         except Exception:
-            container.kill()
+            try:
+                container.kill()
+            except Exception:
+                pass  # container already dead — keep going so logs are captured
             exit_code = 124  # timeout
 
         stdout = container.logs(stdout=True, stderr=True).decode("utf-8", errors="replace")

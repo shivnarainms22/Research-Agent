@@ -1,6 +1,8 @@
 """Hybrid BM25 + vector search with Reciprocal Rank Fusion (RRF)."""
 from __future__ import annotations
 
+import threading
+
 import structlog
 from rank_bm25 import BM25Okapi
 
@@ -10,6 +12,24 @@ from knowledge import paper_store, vector_store
 log = structlog.get_logger()
 
 _K = 60  # RRF constant
+
+# BM25 corpus cache — rebuilt only when the paper count changes (papers are
+# append-only), instead of re-tokenizing the whole corpus on every search.
+_corpus_lock = threading.Lock()
+_corpus_cache: tuple[int, list[Paper], BM25Okapi] | None = None
+
+
+def _get_corpus() -> tuple[list[Paper], BM25Okapi | None]:
+    global _corpus_cache
+    count = paper_store.count_papers()
+    if count == 0:
+        return [], None
+    with _corpus_lock:
+        if _corpus_cache is None or _corpus_cache[0] != count:
+            papers = paper_store.get_all_papers(limit=5000)
+            tokens = [f"{p.title} {p.abstract}".lower().split() for p in papers]
+            _corpus_cache = (count, papers, BM25Okapi(tokens))
+        return _corpus_cache[1], _corpus_cache[2]
 
 
 def _rrf_score(rank: int) -> float:
@@ -22,13 +42,11 @@ def search(query: str, n: int = 10) -> list[Paper]:
     vec_results = vector_store.query_similar(query, n_results=n * 2)
     vec_ids = [r["id"] for r in vec_results]
 
-    # --- BM25 over in-memory corpus ---
-    all_papers = paper_store.get_all_papers(limit=5000)
+    # --- BM25 over in-memory corpus (cached) ---
+    all_papers, bm25 = _get_corpus()
     if not all_papers:
         return []
 
-    corpus = [f"{p.title} {p.abstract}".lower().split() for p in all_papers]
-    bm25 = BM25Okapi(corpus)
     scores = bm25.get_scores(query.lower().split())
     bm25_ranked = sorted(range(len(all_papers)), key=lambda i: scores[i], reverse=True)[: n * 2]
     bm25_ids = [all_papers[i].id for i in bm25_ranked]
