@@ -18,6 +18,12 @@ def _paper_id(arxiv_id: str) -> str:
     return hashlib.sha256(f"arxiv:{arxiv_id}".encode()).hexdigest()[:32]
 
 
+def _build_query() -> str:
+    cat_q = " OR ".join(f"cat:{c}" for c in settings.arxiv_categories)
+    kw_q = " OR ".join(f'ti:"{k}" OR abs:"{k}"' for k in settings.arxiv_keywords)
+    return f"({cat_q}) AND ({kw_q})"
+
+
 def fetch_papers(days_back: int = 1, max_results: int | None = None) -> list[Paper]:
     """Fetch recent arXiv papers matching configured keywords and categories."""
     if max_results is None:
@@ -25,10 +31,7 @@ def fetch_papers(days_back: int = 1, max_results: int | None = None) -> list[Pap
 
     since = datetime.utcnow() - timedelta(days=days_back)
 
-    # Build query: categories OR keywords
-    cat_q = " OR ".join(f"cat:{c}" for c in settings.arxiv_categories)
-    kw_q = " OR ".join(f'ti:"{k}" OR abs:"{k}"' for k in settings.arxiv_keywords[:8])
-    query = f"({cat_q}) AND ({kw_q})"
+    query = _build_query()
 
     client = arxiv.Client(page_size=100, delay_seconds=3.0, num_retries=5)
     search = arxiv.Search(
