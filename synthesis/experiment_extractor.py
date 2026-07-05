@@ -11,7 +11,8 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 from config import settings
 from core import token_tracker
-from core.models import Experiment, PaperAnalysis
+from core.models import Experiment, Paper, PaperAnalysis
+from ingestion import repo_fetcher
 from knowledge.experiment_store import get_experiments_by_paper_id, get_recent_failed_results
 from knowledge import paper_store, retriever
 
@@ -32,6 +33,8 @@ You are an expert AI researcher specializing in reproducing and validating ML ex
 Your goal is to write a rigorous, faithful Python experiment that tests a specific claim from a paper.
 
 Requirements:
+- If an official repository README is provided, follow the official implementation's approach,
+  entry points, and dependencies — adapt it rather than reinventing the method from prose
 - Implement the exact method described in the paper — not a simplified proxy
 - Use the paper's stated hyperparameters wherever possible
 - Use the stated datasets; if unavailable, use the closest public equivalent and note the substitution
@@ -76,6 +79,7 @@ def extract_experiments(
     paper_id: str,
     analysis: PaperAnalysis,
     has_direct_contradiction: bool = False,
+    paper: Paper | None = None,
 ) -> list[Experiment]:
     """Generate Experiment records from a PaperAnalysis."""
     reproducible = json.loads(analysis.reproducible_experiments)
@@ -150,6 +154,9 @@ def extract_experiments(
     except Exception:
         pass  # failure context is best-effort
 
+    # Official repo README grounds codegen in the real implementation (best-effort)
+    repo_context = repo_fetcher.get_repo_context(paper) if paper is not None else ""
+
     # Take up to 3 experiments per paper
     for exp_spec in reproducible[:3]:
         try:
@@ -162,6 +169,7 @@ Limitations: {json.loads(analysis.limitations)}
 Reproducibility difficulty: {analysis.reproducibility_difficulty}
 {related_context}
 {failure_context}
+{repo_context}
 
 Experiment to implement:
 Title: {exp_spec['title']}

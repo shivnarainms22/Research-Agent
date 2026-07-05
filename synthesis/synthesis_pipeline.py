@@ -52,7 +52,7 @@ def _extract_one(paper: Paper, analysis: PaperAnalysis) -> list[Experiment]:
             log.warning("synthesis.contradiction_check_failed", paper_id=paper.id, error=str(e))
 
         return experiment_extractor.extract_experiments(
-            paper.id, analysis, has_direct_contradiction=has_direct_contradiction
+            paper.id, analysis, has_direct_contradiction=has_direct_contradiction, paper=paper
         )
     except Exception as e:
         log.error("synthesis.phase2_failed", paper_id=paper.id, error=str(e))
