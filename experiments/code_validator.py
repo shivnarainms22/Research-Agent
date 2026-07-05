@@ -140,7 +140,8 @@ Please fix the code to remove the security issue while preserving the experiment
 Return ONLY the fixed Python code, no explanation."""
                     }],
                 )
-                text = fix_resp.content[0].text if fix_resp.content else ""
+                from core.claude_utils import first_text
+                text = first_text(fix_resp)
                 # Extract code block if present
                 if "```python" in text:
                     current_code = text.split("```python")[1].split("```")[0].strip()
