@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     min_relevance_score_to_experiment: float = 7.0
     min_keyword_matches_to_analyze: int = 2
 
+    # When True, CPU-only local experiments skip the review queue (created as
+    # 'pending', not 'pending_review'). GPU/cloud experiments are always gated.
+    auto_approve_cpu_experiments: bool = False
+
     # Experiment execution
     experiment_timeout_seconds: int = 3600
     docker_memory_limit: str = "8g"
@@ -130,6 +134,12 @@ class Settings(BaseSettings):
                     self,
                     "min_keyword_matches_to_analyze",
                     int(thresholds["min_keyword_matches_to_analyze"]),
+                )
+            if "auto_approve_cpu_experiments" in data:
+                object.__setattr__(
+                    self,
+                    "auto_approve_cpu_experiments",
+                    bool(data["auto_approve_cpu_experiments"]),
                 )
         except Exception:
             pass  # domain.yaml loading is best-effort

@@ -73,6 +73,14 @@ _EXPERIMENT_CODE_TOOL = {
 }
 
 
+def _initial_status(compute: str, target: str) -> str:
+    """CPU-only local experiments may skip review when opted in; GPU/cloud stays gated."""
+    if (settings.auto_approve_cpu_experiments
+            and compute == "cpu_only" and target == "local"):
+        return "pending"
+    return "pending_review"
+
+
 @retry(
     retry=retry_if_exception_type(anthropic.RateLimitError),
     wait=wait_exponential(multiplier=1, min=60, max=300),
@@ -223,6 +231,8 @@ public equivalent and log the substitution. Log whether your result meets the cl
             if compute == "gpu_large":
                 target = "cloud_modal"
 
+            status = _initial_status(compute, target)
+
             exp = Experiment(
                 id=str(uuid.uuid4()),
                 paper_id=paper_id,
@@ -230,7 +240,7 @@ public equivalent and log the substitution. Log whether your result meets the cl
                 hypothesis=tool_result["hypothesis"],
                 generated_code=tool_result["python_code"],
                 execution_target=target,
-                status="pending_review",
+                status=status,
                 created_at=datetime.utcnow(),
                 retry_count=0,
             )
