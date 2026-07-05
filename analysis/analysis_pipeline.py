@@ -42,7 +42,7 @@ def analyze_result(exp: Experiment, result: ExperimentResult) -> dict:
     if metrics:
         result.statistical_summary = json.dumps(statistical_analyzer.analyze(metrics))
 
-    comparison = baseline_comparator.compare(result, exp.paper_id)
+    comparison = baseline_comparator.compare(result, exp.paper_id, experiment_title=exp.title)
     result.baseline_comparison = json.dumps(comparison)
 
     if result.statistical_summary:

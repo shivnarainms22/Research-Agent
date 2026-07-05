@@ -88,6 +88,11 @@ def _run_from_stage(state: RunState, days_back: int) -> None:
         except Exception as e:
             log.error("pipeline_runner.stage_error", stage=stage, error=str(e))
             log_error(state, stage, str(e))
+            try:
+                from core.notifier import notify
+                notify(f"Cycle {state.cycle_id} failed", f"Stage '{stage}' errored: {str(e)[:300]}")
+            except Exception:
+                pass
             raise
 
     mark_complete(state)
@@ -97,6 +102,26 @@ def _run_from_stage(state: RunState, days_back: int) -> None:
     save_state(state)
     log.info("pipeline_runner.cycle_complete", cycle_id=state.cycle_id,
              input_tokens=state.total_input_tokens, output_tokens=state.total_output_tokens)
+    _notify_cycle_complete(state)
+
+
+def _notify_cycle_complete(state: RunState) -> None:
+    """Best-effort completion notification with the numbers worth knowing."""
+    try:
+        from core.notifier import notify
+        from knowledge.experiment_store import count_by_status
+        from knowledge.token_log_store import estimate_cost
+
+        pending_review = count_by_status().get("pending_review", 0)
+        cost = estimate_cost(state.total_input_tokens, state.total_output_tokens)
+        notify(
+            f"Cycle {state.cycle_id} complete",
+            f"{len(state.paper_ids_this_cycle)} new papers, "
+            f"{len(state.experiment_ids_this_cycle)} experiments queued, "
+            f"{pending_review} awaiting review. Est. cost ${cost:.2f}.",
+        )
+    except Exception as e:
+        log.warning("pipeline_runner.notify_failed", error=str(e))
 
 
 def run_experiment_poll() -> None:

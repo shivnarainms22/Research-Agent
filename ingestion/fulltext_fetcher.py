@@ -80,32 +80,51 @@ def _extract_key_sections(soup: BeautifulSoup, max_total: int = 8000) -> str | N
     return "\n\n".join(sections_out) if sections_out else None
 
 
+def _fetch_from_pdf(arxiv_id: str, max_chars: int) -> str | None:
+    """Fallback for papers with no HTML version: extract text from the PDF."""
+    try:
+        import fitz  # PyMuPDF
+
+        resp = httpx.get(f"https://arxiv.org/pdf/{arxiv_id}", timeout=30, follow_redirects=True)
+        if resp.status_code != 200:
+            return None
+        doc = fitz.open(stream=resp.content, filetype="pdf")
+        text = "\n".join(page.get_text() for page in doc).strip()
+        log.debug("fulltext_fetcher.pdf_fallback", arxiv_id=arxiv_id, chars=min(len(text), max_chars))
+        return text[:max_chars] if text else None
+    except Exception as exc:
+        log.debug("fulltext_fetcher.pdf_error", arxiv_id=arxiv_id, error=str(exc))
+        return None
+
+
 def fetch_arxiv_fulltext(arxiv_id: str, max_chars: int = 20000) -> str | None:
-    """Fetch full text from arXiv HTML endpoint. Returns None if unavailable.
+    """Fetch full text from arXiv HTML endpoint, falling back to the PDF.
 
     Attempts section-aware extraction (methods, experiments, results, conclusion)
-    to maximise signal density. Falls back to raw text if no sections detected.
+    to maximise signal density. Falls back to raw HTML text, then to PDF text
+    (older papers have no HTML version).
     """
     url = f"https://arxiv.org/html/{arxiv_id}"
     try:
         resp = httpx.get(url, timeout=15, follow_redirects=True)
-        if resp.status_code != 200:
-            return None
-        soup = BeautifulSoup(resp.text, "html.parser")
-        for tag in soup(["script", "style", "nav", "header", "footer"]):
-            tag.decompose()
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for tag in soup(["script", "style", "nav", "header", "footer"]):
+                tag.decompose()
 
-        structured = _extract_key_sections(soup, max_total=8000)
-        if structured:
-            log.debug("fulltext_fetcher.structured", arxiv_id=arxiv_id, chars=len(structured))
-            return structured
+            structured = _extract_key_sections(soup, max_total=8000)
+            if structured:
+                log.debug("fulltext_fetcher.structured", arxiv_id=arxiv_id, chars=len(structured))
+                return structured
 
-        # Fallback: raw body text from the start
-        body = soup.find("body") or soup
-        text = body.get_text(separator=" ", strip=True)
-        log.debug("fulltext_fetcher.raw_fallback", arxiv_id=arxiv_id, chars=min(len(text), max_chars))
-        return text[:max_chars] if text else None
+            body = soup.find("body") or soup
+            text = body.get_text(separator=" ", strip=True)
+            if text:
+                log.debug("fulltext_fetcher.raw_fallback", arxiv_id=arxiv_id, chars=min(len(text), max_chars))
+                return text[:max_chars]
 
     except Exception as exc:
         log.debug("fulltext_fetcher.error", arxiv_id=arxiv_id, error=str(exc))
-        return None
+
+    # No usable HTML — try the PDF (older papers predate arXiv's HTML endpoint)
+    return _fetch_from_pdf(arxiv_id, max_chars)

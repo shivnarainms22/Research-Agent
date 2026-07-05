@@ -11,8 +11,10 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 from config import settings
 from core import token_tracker
-from core.models import Experiment, PaperAnalysis
-from knowledge.experiment_store import get_experiments_by_paper_id, get_recent_failed_results
+from core.models import Experiment, Paper, PaperAnalysis
+from ingestion import repo_fetcher
+from knowledge.experiment_store import get_experiments_by_paper_id
+from knowledge.lesson_store import get_recent_lessons
 from knowledge import paper_store, retriever
 
 log = structlog.get_logger()
@@ -32,12 +34,17 @@ You are an expert AI researcher specializing in reproducing and validating ML ex
 Your goal is to write a rigorous, faithful Python experiment that tests a specific claim from a paper.
 
 Requirements:
+- If an official repository README is provided, follow the official implementation's approach,
+  entry points, and dependencies — adapt it rather than reinventing the method from prose
 - Implement the exact method described in the paper — not a simplified proxy
 - Use the paper's stated hyperparameters wherever possible
 - Use the stated datasets; if unavailable, use the closest public equivalent and note the substitution
 - Treat the paper's claimed baseline metric as the target: log whether you meet, exceed, or fall short
 - Be fully self-contained (all imports at top, no external files needed)
 - Write all results to /workspace/results/metrics.json as a JSON dict
+- The metrics dict MUST include a top-level boolean "claim_verified" — True if your measured
+  result reproduces the paper's claimed value (within ~5%), False otherwise — plus
+  "paper_claimed_value" and "measured_value" (numbers) for the primary metric
 - Be executable in under 1 hour on the specified compute tier
 - Use only standard ML libraries (torch, transformers, sklearn, numpy, scipy, pandas)
 - Log progress at each major step with timing information
@@ -67,6 +74,14 @@ _EXPERIMENT_CODE_TOOL = {
 }
 
 
+def _initial_status(compute: str, target: str) -> str:
+    """CPU-only local experiments may skip review when opted in; GPU/cloud stays gated."""
+    if (settings.auto_approve_cpu_experiments
+            and compute == "cpu_only" and target == "local"):
+        return "pending"
+    return "pending_review"
+
+
 @retry(
     retry=retry_if_exception_type(anthropic.RateLimitError),
     wait=wait_exponential(multiplier=1, min=60, max=300),
@@ -76,6 +91,7 @@ def extract_experiments(
     paper_id: str,
     analysis: PaperAnalysis,
     has_direct_contradiction: bool = False,
+    paper: Paper | None = None,
 ) -> list[Experiment]:
     """Generate Experiment records from a PaperAnalysis."""
     reproducible = json.loads(analysis.reproducible_experiments)
@@ -131,24 +147,20 @@ def extract_experiments(
     except Exception:
         pass  # related context is best-effort
 
-    # Build failure feedback context from recent failed experiments
+    # Build failure feedback from accumulated lessons (diagnoses + final failures)
     failure_context = ""
     try:
-        failed_pairs = get_recent_failed_results(limit=5)
-        if failed_pairs:
-            lines = []
-            for failed_exp, failed_result in failed_pairs:
-                exit_note = f"exit_code={failed_result.exit_code}"
-                metrics_note = "no metrics" if failed_result.metrics == "{}" else "empty metrics"
-                lines.append(
-                    f"- '{failed_exp.title}': {exit_note}, {metrics_note}"
-                )
+        lessons = get_recent_lessons(limit=6)
+        if lessons:
             failure_context = (
-                "Recent failed experiments (avoid similar mistakes):\n"
-                + "\n".join(lines)
+                "Lessons from past experiments (apply these, avoid these mistakes):\n"
+                + "\n".join(f"- {les.text}" for les in lessons)
             )
     except Exception:
         pass  # failure context is best-effort
+
+    # Official repo README grounds codegen in the real implementation (best-effort)
+    repo_context = repo_fetcher.get_repo_context(paper) if paper is not None else ""
 
     # Take up to 3 experiments per paper
     for exp_spec in reproducible[:3]:
@@ -162,6 +174,7 @@ Limitations: {json.loads(analysis.limitations)}
 Reproducibility difficulty: {analysis.reproducibility_difficulty}
 {related_context}
 {failure_context}
+{repo_context}
 
 Experiment to implement:
 Title: {exp_spec['title']}
@@ -212,6 +225,8 @@ public equivalent and log the substitution. Log whether your result meets the cl
             if compute == "gpu_large":
                 target = "cloud_modal"
 
+            status = _initial_status(compute, target)
+
             exp = Experiment(
                 id=str(uuid.uuid4()),
                 paper_id=paper_id,
@@ -219,7 +234,7 @@ public equivalent and log the substitution. Log whether your result meets the cl
                 hypothesis=tool_result["hypothesis"],
                 generated_code=tool_result["python_code"],
                 execution_target=target,
-                status="pending_review",
+                status=status,
                 created_at=datetime.utcnow(),
                 retry_count=0,
             )

@@ -141,6 +141,18 @@ class TokenUsageLog(SQLModel, table=True):
     recorded_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class Lesson(SQLModel, table=True):
+    """A durable, retrievable takeaway from an experiment outcome."""
+    __tablename__ = "lesson"
+
+    id: str = Field(primary_key=True)                 # uuid4
+    experiment_id: str = Field(index=True)
+    paper_id: Optional[str] = None
+    category: str = "repair"                            # "repair" | "failure" | "success"
+    text: str                                          # one actionable sentence/paragraph
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class EvalMetric(SQLModel, table=True):
     __tablename__ = "eval_metric"
 

@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     modal_token_id: str = ""
     modal_token_secret: str = ""
 
+    # Notifications (all optional — unconfigured = silent)
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    notify_webhook_url: str = ""
+
     # Claude models
     claude_model: str = "claude-sonnet-5"
     claude_haiku_model: str = "claude-haiku-4-5-20251001"
@@ -81,6 +86,10 @@ class Settings(BaseSettings):
     min_relevance_score_to_experiment: float = 7.0
     min_keyword_matches_to_analyze: int = 2
 
+    # When True, CPU-only local experiments skip the review queue (created as
+    # 'pending', not 'pending_review'). GPU/cloud experiments are always gated.
+    auto_approve_cpu_experiments: bool = False
+
     # Experiment execution
     experiment_timeout_seconds: int = 3600
     docker_memory_limit: str = "8g"
@@ -125,6 +134,12 @@ class Settings(BaseSettings):
                     self,
                     "min_keyword_matches_to_analyze",
                     int(thresholds["min_keyword_matches_to_analyze"]),
+                )
+            if "auto_approve_cpu_experiments" in data:
+                object.__setattr__(
+                    self,
+                    "auto_approve_cpu_experiments",
+                    bool(data["auto_approve_cpu_experiments"]),
                 )
         except Exception:
             pass  # domain.yaml loading is best-effort

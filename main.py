@@ -159,6 +159,31 @@ def status():
 
 
 @app.command()
+def install_task():
+    """Register the scheduler as a Windows task that restarts on login (survives reboots)."""
+    _configure_logging()
+    from pathlib import Path
+    from config import settings
+    from scheduler import task_installer
+
+    if sys.platform != "win32":
+        console.print("[yellow]install-task supports Windows only.[/yellow]")
+        raise typer.Exit(1)
+
+    project_root = Path(__file__).resolve().parent
+    try:
+        bat_path, removal_cmd = task_installer.install(project_root, settings.state_dir)
+    except Exception as e:
+        console.print(f"[red]Failed to register task:[/red] {e}")
+        raise typer.Exit(1)
+
+    console.print(f"[green]Registered task '{task_installer.TASK_NAME}'[/green] — the scheduler will")
+    console.print("start automatically at each login. It launches:")
+    console.print(f"  {bat_path}")
+    console.print(f"\nTo remove it:\n  {removal_cmd}")
+
+
+@app.command()
 def report(
     report_type: str = typer.Option("weekly", "--type", "-t"),
 ):

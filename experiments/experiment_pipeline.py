@@ -3,21 +3,76 @@ from __future__ import annotations
 
 import structlog
 
-from core.models import RunState
-from experiments import code_validator, local_runner, cloud_runner, router
+from core.models import Experiment, RunState
+from experiments import (
+    code_repairer, code_validator, experiment_critic, local_runner, cloud_runner, router,
+)
 from experiments.result_collector import parse_metrics_from_stdout
 from knowledge.experiment_store import (
     get_experiments_by_status,
     get_result,
+    update_experiment_code,
     update_experiment_status,
     increment_retry,
     save_result,
     delete_result,
 )
+from knowledge.lesson_store import save_lesson
 
 log = structlog.get_logger()
 
 _MAX_RETRIES = 3
+_STDOUT_TAIL_CHARS = 5000
+
+
+def _repair_before_run(exp: Experiment, reason: str) -> bool:
+    """Repair a critic-flagged experiment and requeue it. Returns True if requeued."""
+    try:
+        repaired = code_repairer.repair(exp, f"Pre-run critic flagged this script: {reason}")
+    except Exception as e:
+        log.error("experiment_pipeline.critic_repair_error", exp_id=exp.id, error=str(e))
+        return False
+    if repaired is None:
+        return False
+    fixed_code, diagnosis = repaired
+    update_experiment_code(exp.id, fixed_code)
+    increment_retry(exp.id)
+    update_experiment_status(exp.id, "pending", error=f"critic: {reason[:200]}; repaired: {diagnosis[:200]}")
+    if diagnosis:
+        save_lesson(exp.id, f"'{exp.title}': critic flagged '{reason}' — fix: {diagnosis}",
+                    category="repair", paper_id=exp.paper_id)
+    log.info("experiment_pipeline.critic_requeued", exp_id=exp.id, reason=reason[:120])
+    return True
+
+
+def _repair_or_fail(exp: Experiment, failure_context: str, error: str) -> None:
+    """Repair the code and requeue as pending, or mark failed when out of retries.
+
+    Called after increment_retry, so exp.retry_count is one behind the DB value.
+    """
+    if exp.retry_count + 1 >= _MAX_RETRIES:
+        update_experiment_status(exp.id, "failed", error=error)
+        save_lesson(exp.id, f"'{exp.title}' failed after {_MAX_RETRIES} attempts: {error}",
+                    category="failure", paper_id=exp.paper_id)
+        return
+
+    try:
+        repaired = code_repairer.repair(exp, failure_context)
+    except Exception as e:
+        log.error("experiment_pipeline.repair_error", exp_id=exp.id, error=str(e))
+        repaired = None
+
+    if repaired is None:
+        update_experiment_status(exp.id, "failed", error=error)
+        return
+
+    fixed_code, diagnosis = repaired
+    update_experiment_code(exp.id, fixed_code)
+    update_experiment_status(exp.id, "pending", error=f"{error}; repaired: {diagnosis[:300]}")
+    if diagnosis:
+        save_lesson(exp.id, f"'{exp.title}' failed ({error}) — fix: {diagnosis}",
+                    category="repair", paper_id=exp.paper_id)
+    log.info("experiment_pipeline.repaired_requeued", exp_id=exp.id, diagnosis=diagnosis[:120])
 
 
 def run(state: RunState) -> None:
@@ -41,6 +96,14 @@ def run(state: RunState) -> None:
 
         exp.generated_code = validated_code
 
+        # Pre-run critic: if the script won't faithfully test the claim, repair it
+        # before spending compute. Advisory — runs anyway if repair is unavailable
+        # or the retry budget is exhausted.
+        if exp.retry_count < _MAX_RETRIES - 1:
+            verdict, reason = experiment_critic.review(exp)
+            if verdict == "flawed" and _repair_before_run(exp, reason):
+                continue
+
         # Determine execution target
         target = router.decide_target(exp)
         exp.execution_target = target
@@ -60,23 +123,24 @@ def run(state: RunState) -> None:
                 if fallback:
                     import json
                     result.metrics = json.dumps(fallback)
-            result.stdout = ""  # free storage — metrics extracted, raw output not needed
+
+            # Clear stdout on success; keep the tail on failure — it's the repair signal
+            success = result.exit_code == 0 and result.metrics != "{}"
+            result.stdout = "" if success else result.stdout[-_STDOUT_TAIL_CHARS:]
 
             # Delete stale result from a previous failed run before saving
             if get_result(exp.id):
                 delete_result(exp.id)
             save_result(result)
 
-            no_metrics = result.metrics == "{}"
-            if result.exit_code == 0 and not no_metrics:
+            if success:
                 update_experiment_status(exp.id, "completed")
-            elif result.exit_code == 0 and no_metrics:
-                increment_retry(exp.id)
-                update_experiment_status(exp.id, "failed", error="exit_code=0 but no metrics produced")
-                log.warning("experiment_pipeline.no_metrics", exp_id=exp.id)
             else:
+                error = ("exit_code=0 but no metrics produced" if result.exit_code == 0
+                         else f"exit_code={result.exit_code}")
+                log.warning("experiment_pipeline.run_failed", exp_id=exp.id, error=error)
                 increment_retry(exp.id)
-                update_experiment_status(exp.id, "failed", error=f"exit_code={result.exit_code}")
+                _repair_or_fail(exp, f"{error}\nOutput tail:\n{result.stdout}", error)
 
         except Exception as e:
             log.error("experiment_pipeline.error", exp_id=exp.id, error=str(e))

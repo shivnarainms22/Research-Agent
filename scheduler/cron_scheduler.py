@@ -44,6 +44,11 @@ def _weekly_report_job():
             state = new_state(f"weekly_{datetime.utcnow().strftime('%Y%m%d')}")
 
         report_generator.generate(state, report_type="weekly")
+        try:
+            from core.notifier import notify
+            notify("Weekly report ready", f"Digest generated for {state.cycle_id}.")
+        except Exception:
+            pass
     except Exception as e:
         log.error("scheduler.weekly_report_error", error=str(e))
 
