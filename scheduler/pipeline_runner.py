@@ -102,18 +102,13 @@ def _run_from_stage(state: RunState, days_back: int) -> None:
 def run_experiment_poll() -> None:
     """Poll and run any pending experiments (called by scheduler interval job)."""
     from experiments import experiment_pipeline as ep
-    from core.state import find_incomplete_states
 
-    # Create a minimal state for standalone experiment runs
-    incomplete = find_incomplete_states()
-    if incomplete:
-        state = incomplete[-1]
-    else:
-        state = RunState(
-            cycle_id=f"poll_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
-            started_at=datetime.utcnow(),
-            current_stage="experiments",
-        )
-
+    # In-memory state only — a persisted poll state (current_stage="experiments")
+    # would be resumed by run_cycle, silently skipping ingestion and synthesis.
+    state = RunState(
+        cycle_id=f"poll_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
+        started_at=datetime.utcnow(),
+        current_stage="experiments",
+    )
     ep.run(state)
     log.info("pipeline_runner.experiment_poll_done")
